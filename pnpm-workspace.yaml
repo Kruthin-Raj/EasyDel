@@ -6,3 +6,9 @@ allowBuilds:
   '@prisma/engines': true
   prisma: true
   unrs-resolver: true
+
+# pnpm 11 re-runs `install` before every `pnpm run`. Inside a Turbo task that
+# executes in a package subdirectory this misdetects the workspace root and
+# fails. Turbo and CI already install before building, so the check is
+# redundant and only costs time.
+verifyDepsBeforeRun: false

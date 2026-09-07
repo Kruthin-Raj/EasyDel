@@ -1,21 +1,50 @@
 {
   "$schema": "https://turbo.build/schema.json",
+
+  "//": "Every env var the apps read must be declared in globalEnv. Turbo filters the environment it passes to tasks: anything not listed is stripped and the build sees undefined. Silent for server-side reads, but NEXT_PUBLIC_* values are inlined into the browser bundle at build time, so a missing one ships a broken client with no error.",
+
   "globalEnv": [
+    "NODE_ENV",
+
     "DATABASE_URL",
     "DIRECT_URL",
+
+    "JWT_SECRET",
+    "ADMIN_PASSWORD",
+
+    "SMTP_HOST",
+    "SMTP_PORT",
+    "SMTP_USER",
+    "SMTP_PASSWORD",
+    "SMTP_FROM",
+    "SMTP_SECURE",
+
     "SUPABASE_URL",
     "SUPABASE_ANON_KEY",
     "SUPABASE_SERVICE_ROLE_KEY",
-    "JWT_SECRET",
+    "STORAGE_BUCKET",
+
     "ROUTING_PROVIDER",
     "OSRM_URL",
     "VALHALLA_URL",
     "GEOCODING_URL",
     "MAP_STYLE_URL",
+
+    "NEXT_PUBLIC_SITE_URL",
+    "NEXT_PUBLIC_MAP_STYLE_URL",
+    "NEXT_PUBLIC_SUPABASE_URL",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
     "NEXT_PUBLIC_API_URL",
+
     "EXPO_PUBLIC_API_URL",
-    "STORAGE_BUCKET"
+    "EXPO_PUBLIC_SUPABASE_URL",
+    "EXPO_PUBLIC_SUPABASE_ANON_KEY",
+
+    "VERCEL",
+    "VERCEL_URL",
+    "VERCEL_ENV"
   ],
+
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

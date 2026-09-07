@@ -1,0 +1,290 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  ADMIN
+  MENTOR
+  DELIVERY_AGENT
+}
+
+enum LocationStatus {
+  ACTIVE
+  PAUSED
+  CANCELLED
+  MOVED
+  ARCHIVED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAUSED
+  CANCELLED
+  EXPIRED
+}
+
+enum RouteStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  ACTIVE
+  ARCHIVED
+}
+
+enum DeliveryStatus {
+  PENDING
+  IN_PROGRESS
+  DELIVERED
+  FAILED
+  SKIPPED
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  role      Role     @default(DELIVERY_AGENT)
+  firstName String
+  lastName  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  driverProfile DriverProfile?
+  mentorProfile MentorProfile?
+
+  createdRoutes     Route[]       @relation("CreatedRoutes")
+  approvedRoutes    Route[]       @relation("ApprovedRoutes")
+  auditLogs         AuditLog[]
+  trainingSessions  TrainingSession[] @relation("MentorSessions")
+  trainedSessions   TrainingSession[] @relation("TraineeSessions")
+}
+
+model DriverProfile {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id])
+  active         Boolean  @default(true)
+  vehicleType    String?
+  assignedRoutes Route[]  @relation("DriverRoutes")
+}
+
+model MentorProfile {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id])
+  active         Boolean  @default(true)
+}
+
+model DeliveryLocation {
+  id                   String         @id @default(uuid())
+  name                 String
+  buildingName         String?
+  address              String
+  latitude             Float
+  longitude            Float
+  photo                String?
+  notes                String?
+  floor                String?
+  unit                 String?
+  entranceInstructions String?
+  securityInstructions String?
+  status               LocationStatus @default(ACTIVE)
+  pauseUntil           DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subscriptions Subscription[]
+  routeStops    RouteStop[]
+  history       LocationHistory[]
+}
+
+model Subscription {
+  id                 String             @id @default(uuid())
+  deliveryLocationId String
+  deliveryLocation   DeliveryLocation   @relation(fields: [deliveryLocationId], references: [id])
+  customerId         String?
+  productType        String
+  quantity           Int
+  frequency          String             // e.g., "DAILY", "WEEKDAYS"
+  status             SubscriptionStatus @default(ACTIVE)
+  startDate          DateTime           @default(now())
+  endDate            DateTime?
+  specialInstructions String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  deliveries Delivery[]
+}
+
+model Route {
+  id          String      @id @default(uuid())
+  name        String
+  status      RouteStatus @default(DRAFT)
+  
+  createdById String
+  createdBy   User        @relation("CreatedRoutes", fields: [createdById], references: [id])
+  
+  approvedById String?
+  approvedBy   User?      @relation("ApprovedRoutes", fields: [approvedById], references: [id])
+  
+  driverId    String?
+  driver      DriverProfile? @relation("DriverRoutes", fields: [driverId], references: [id])
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  versions    RouteVersion[]
+}
+
+model RouteVersion {
+  id                String   @id @default(uuid())
+  routeId           String
+  route             Route    @relation(fields: [routeId], references: [id])
+  versionNumber     Int
+  startLocationName String?
+  startLatitude     Float?
+  startLongitude    Float?
+  endLocationName   String?
+  endLatitude       Float?
+  endLongitude      Float?
+  
+  totalDistance     Float?   // in meters
+  estimatedDuration Int?     // in seconds
+  routeGeometry     String?  // GeoJSON polyline
+
+  createdAt         DateTime @default(now())
+
+  stops             RouteStop[]
+  deliveries        Delivery[]
+}
+
+model RouteStop {
+  id                 String           @id @default(uuid())
+  routeVersionId     String
+  routeVersion       RouteVersion     @relation(fields: [routeVersionId], references: [id])
+  deliveryLocationId String
+  deliveryLocation   DeliveryLocation @relation(fields: [deliveryLocationId], references: [id])
+  sequence           Int
+  
+  distanceFromPrevious Float?
+  durationFromPrevious Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Delivery {
+  id             String         @id @default(uuid())
+  routeVersionId String
+  routeVersion   RouteVersion   @relation(fields: [routeVersionId], references: [id])
+  subscriptionId String
+  subscription   Subscription   @relation(fields: [subscriptionId], references: [id])
+  
+  status         DeliveryStatus @default(PENDING)
+  quantity       Int
+  notes          String?
+  reason         String?        // for FAILED or SKIPPED
+  
+  timestamp      DateTime?
+  latitude       Float?
+  longitude      Float?
+  photoUrl       String?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model TrainingSession {
+  id             String   @id @default(uuid())
+  mentorId       String
+  mentor         User     @relation("MentorSessions", fields: [mentorId], references: [id])
+  traineeId      String
+  trainee        User     @relation("TraineeSessions", fields: [traineeId], references: [id])
+  
+  routeName      String
+  distance       Float?
+  duration       Int?
+  geometry       String?  // GPS track
+
+  startedAt      DateTime @default(now())
+  endedAt        DateTime?
+
+  checkpoints    TrainingCheckpoint[]
+}
+
+model TrainingCheckpoint {
+  id                   String           @id @default(uuid())
+  trainingSessionId    String
+  trainingSession      TrainingSession  @relation(fields: [trainingSessionId], references: [id])
+  name                 String
+  address              String
+  latitude             Float
+  longitude            Float
+  photoUrl             String?
+  deliveryType         String?
+  quantity             Int?
+  notes                String?
+  floor                String?
+  unit                 String?
+  entranceInstructions String?
+  securityInstructions String?
+  timestamp            DateTime         @default(now())
+}
+
+model GPSPoint {
+  id        String   @id @default(uuid())
+  userId    String
+  routeId   String?  // Active route
+  latitude  Float
+  longitude Float
+  accuracy  Float?
+  speed     Float?
+  heading   Float?
+  timestamp DateTime @default(now())
+
+  @@index([userId, timestamp])
+}
+
+model Issue {
+  id          String   @id @default(uuid())
+  reportedBy  String   // userId
+  entityType  String   // e.g., "Location", "Route", "Delivery"
+  entityId    String
+  description String
+  status      String   @default("OPEN")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  action     String
+  entityType String
+  entityId   String
+  oldValue   String?
+  newValue   String?
+  reason     String?
+  timestamp  DateTime @default(now())
+}
+
+model LocationHistory {
+  id                 String           @id @default(uuid())
+  deliveryLocationId String
+  deliveryLocation   DeliveryLocation @relation(fields: [deliveryLocationId], references: [id])
+  changedBy          String           // userId
+  oldLatitude        Float?
+  oldLongitude       Float?
+  newLatitude        Float?
+  newLongitude       Float?
+  reason             String?
+  timestamp          DateTime         @default(now())
+}

@@ -1,0 +1,69 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+.pnpm-store
+dist
+dist-ssr
+build
+out
+.turbo
+
+# Next.js
+.next/
+
+# Expo / React Native
+.expo/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+.idea/
+.gradle/
+local.properties
+*.iml
+*.hprof
+.cxx/
+*.apk
+*.aab
+*.ipa
+*.app
+DerivedData/
+
+# Env files
+.env
+.env*.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+
+# NestJS
+.nestjs
+
+# Prisma
+# packages/database/prisma/*.db
+# packages/database/prisma/*.db-journal
+
+# OS files
+.DS_Store
+*.pem
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

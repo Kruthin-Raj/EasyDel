@@ -1,0 +1,38 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalEnv": [
+    "DATABASE_URL",
+    "DIRECT_URL",
+    "SUPABASE_URL",
+    "SUPABASE_ANON_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "JWT_SECRET",
+    "ROUTING_PROVIDER",
+    "OSRM_URL",
+    "VALHALLA_URL",
+    "GEOCODING_URL",
+    "MAP_STYLE_URL",
+    "NEXT_PUBLIC_API_URL",
+    "EXPO_PUBLIC_API_URL",
+    "STORAGE_BUCKET"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+    },
+    "lint": {
+      "dependsOn": ["^lint"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "start": {
+      "dependsOn": ["^build"]
+    },
+    "test": {
+      "dependsOn": ["^test"]
+    }
+  }
+}

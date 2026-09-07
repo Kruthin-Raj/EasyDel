@@ -99,12 +99,26 @@ and Supabase keys stay on your machine and in Vercel.
    |---|---|
    | **Root Directory** | `apps/web` |
    | Framework Preset | Next.js *(auto-detected)* |
-   | Build Command | *leave default* — `package.json` already generates the Prisma client |
+   | **Build Command** | **`cd ../.. && pnpm --filter web build`** — override the default, see below |
    | Install Command | *leave default* |
 
 3. Leave **"Include source files outside of the Root Directory"** enabled
    (the default). Without it the `@delivery/types` workspace package will not
    resolve and the build fails.
+
+> **⚠️ You must override the Build Command.** Vercel detects Turbo and defaults
+> to `cd ../.. && turbo run build --filter={apps/web}...`. Turbo then runs
+> `pnpm run build` *inside* `apps/web`, and pnpm 11 re-runs `install` scoped to
+> that folder before every script. It treats `apps/web` as its own workspace
+> root, cannot find `@delivery/types@workspace:*`, and the build dies during
+> install with no useful message.
+>
+> `cd ../.. && pnpm --filter web build` runs from the workspace root instead and
+> avoids the problem entirely. Verified against a cold clone of the repo.
+>
+> Setting `verifyDepsBeforeRun: false` in `pnpm-workspace.yaml`, the same key in
+> `.npmrc`, and the `npm_config_verify_deps_before_run` environment variable were
+> all tried — none takes effect in pnpm 11.21.
 4. Add the environment variables below **before** clicking Deploy.
 
 ---

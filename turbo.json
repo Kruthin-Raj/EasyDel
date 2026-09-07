@@ -42,6 +42,7 @@
 
     "VERCEL",
     "VERCEL_URL",
+    "VERCEL_PROJECT_PRODUCTION_URL",
     "VERCEL_ENV"
   ],
 

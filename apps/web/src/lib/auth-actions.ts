@@ -39,8 +39,38 @@ function normaliseEmail(raw: FormDataEntryValue | null) {
   return String(raw ?? '').trim().toLowerCase();
 }
 
+/**
+ * The public base URL, used to build password-reset links.
+ *
+ * Resolved at request time, in this order:
+ *
+ *   1. NEXT_PUBLIC_SITE_URL          — set this once you have a custom domain
+ *   2. VERCEL_PROJECT_PRODUCTION_URL — Vercel injects this; stable across deploys
+ *   3. VERCEL_URL                    — per-deployment URL; correct on previews
+ *   4. localhost                     — development
+ *
+ * The Vercel fallbacks exist to break a chicken-and-egg problem: you cannot
+ * know your deployment URL before the first deploy, so requiring
+ * NEXT_PUBLIC_SITE_URL up front meant every project shipped one broken build
+ * with reset links pointing at a placeholder, then needed a second deploy.
+ *
+ * These are read at runtime rather than inlined at build time (they are not
+ * NEXT_PUBLIC_ variables), so the value is always correct for the deployment
+ * actually serving the request — including preview deployments, which each have
+ * their own hostname.
+ */
 function siteUrl() {
-  return (process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (explicit && !explicit.includes('REPLACE-WITH')) {
+    return explicit.replace(/\/$/, '');
+  }
+
+  // Vercel supplies these without a protocol.
+  const vercelHost =
+    process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() || process.env.VERCEL_URL?.trim();
+  if (vercelHost) return `https://${vercelHost.replace(/\/$/, '')}`;
+
+  return 'http://localhost:3000';
 }
 
 /** Sends the verification code, translating a send failure into a message. */

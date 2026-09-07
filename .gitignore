@@ -49,6 +49,21 @@ DerivedData/
 # NestJS
 .nestjs
 
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# Playwright
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
+# Nested lockfiles: this is a pnpm workspace, the only lockfile is at the root
+apps/*/pnpm-lock.yaml
+apps/*/package-lock.json
+packages/*/pnpm-lock.yaml
+packages/*/package-lock.json
+
 # Prisma
 # packages/database/prisma/*.db
 # packages/database/prisma/*.db-journal
@@ -67,3 +82,6 @@ DerivedData/
 *.njsproj
 *.sln
 *.sw?
+
+# Next.js generates this with a different path for dev vs build
+apps/web/next-env.d.ts

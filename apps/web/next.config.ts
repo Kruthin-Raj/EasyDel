@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  transpilePackages: ['react-map-gl', 'maplibre-gl', 'lucide-react'],
 };
 
 export default nextConfig;

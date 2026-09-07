@@ -4,16 +4,26 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate --schema=../../packages/database/prisma/schema.prisma && next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:seed": "pnpm --filter @delivery/database db:seed",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
+    "@delivery/types": "workspace:*",
+    "lucide-react": "^1.41.0",
+    "maplibre-gl": "4.7.1",
     "next": "16.3.4",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "@delivery/database": "workspace:*",
+    "@prisma/client": "^6.4.1",
+    "nodemailer": "^7.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -21,7 +31,10 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.2",
+    "@types/nodemailer": "^7.0.0",
+    "prisma": "^6.4.1"
   },
   "packageManager": "pnpm@11.21.0"
 }

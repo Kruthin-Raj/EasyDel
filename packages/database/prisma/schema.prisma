@@ -51,12 +51,24 @@ model User {
   role      Role     @default(DELIVERY_AGENT)
   firstName String
   lastName  String
+
+  /// scrypt hash, stored as "scrypt$N$r$p$salt$derivedKey". Never a plaintext
+  /// password. Nullable so an admin can create a user who sets their own
+  /// password later.
+  passwordHash String?
+
+  /// Set once the email OTP has been confirmed. Sign-in is refused until then,
+  /// so an unverified address can never reach the dashboard.
+  emailVerified   Boolean   @default(false)
+  emailVerifiedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   driverProfile DriverProfile?
   mentorProfile MentorProfile?
 
+  routeRuns         RouteRun[]    @relation("DriverRuns")
   createdRoutes     Route[]       @relation("CreatedRoutes")
   approvedRoutes    Route[]       @relation("ApprovedRoutes")
   auditLogs         AuditLog[]
@@ -163,6 +175,7 @@ model RouteVersion {
 
   stops             RouteStop[]
   deliveries        Delivery[]
+  runs              RouteRun[]
 }
 
 model RouteStop {
@@ -180,10 +193,59 @@ model RouteStop {
   updatedAt DateTime @updatedAt
 }
 
+enum RouteRunStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+/// One day's execution of a route.
+///
+/// Without this, deliveries could only be grouped by date, and a route run
+/// twice in a day — or spanning midnight — would be indistinguishable. Each run
+/// owns its own deliveries, so history stays exact per day.
+model RouteRun {
+  id             String         @id @default(uuid())
+  routeVersionId String
+  routeVersion   RouteVersion   @relation(fields: [routeVersionId], references: [id])
+
+  driverId       String
+  driver         User           @relation("DriverRuns", fields: [driverId], references: [id])
+
+  status         RouteRunStatus @default(IN_PROGRESS)
+  startedAt      DateTime       @default(now())
+  endedAt        DateTime?
+
+  startLatitude  Float?
+  startLongitude Float?
+
+  /// JSON array of RouteStop ids in the order this run should visit them.
+  ///
+  /// Set when the driver starts away from the planned start point: the stops
+  /// are re-ordered from wherever they actually are. Stored per run rather than
+  /// as a new RouteVersion, because "I started from home today" is a property
+  /// of the run, not a change to the route everyone shares.
+  stopOrder      String?
+
+  deliveries     Delivery[]
+  issues         Issue[]
+
+  @@index([driverId, status])
+  @@index([routeVersionId, startedAt])
+}
+
 model Delivery {
   id             String         @id @default(uuid())
   routeVersionId String
   routeVersion   RouteVersion   @relation(fields: [routeVersionId], references: [id])
+
+  /// Nullable so deliveries seeded before runs existed remain valid.
+  routeRunId     String?
+  routeRun       RouteRun?      @relation(fields: [routeRunId], references: [id])
+
+  /// Distance from the driver when the outcome was recorded, in metres. Kept so
+  /// a delivery marked from far away can be reviewed later.
+  recordedDistance Float?
   subscriptionId String
   subscription   Subscription   @relation(fields: [subscriptionId], references: [id])
   
@@ -201,6 +263,12 @@ model Delivery {
   updatedAt      DateTime @updatedAt
 }
 
+enum TrainingSessionStatus {
+  RECORDING
+  COMPLETED
+  ABANDONED
+}
+
 model TrainingSession {
   id             String   @id @default(uuid())
   mentorId       String
@@ -216,7 +284,19 @@ model TrainingSession {
   startedAt      DateTime @default(now())
   endedAt        DateTime?
 
+  status         TrainingSessionStatus @default(RECORDING)
+
+  /// The agent recording the session, when they started it themselves rather
+  /// than a mentor doing it for them.
+  recordedById   String?
+
+  /// Set once a delivery route has been generated from this session, so the
+  /// same first-day recording is not turned into duplicate routes.
+  generatedRouteId String?
+
   checkpoints    TrainingCheckpoint[]
+
+  @@index([status, startedAt])
 }
 
 model TrainingCheckpoint {
@@ -235,7 +315,24 @@ model TrainingCheckpoint {
   unit                 String?
   entranceInstructions String?
   securityInstructions String?
+
+  /// Set when the driver marks the house done during a recording session.
+  /// Distinct from `timestamp`, which is when the checkpoint was first created —
+  /// a house can be logged on the way past and completed later.
+  completedAt          DateTime?
+
+  /// Free-text note that is about the NEXT visit rather than this one, e.g.
+  /// "no delivery tomorrow". Kept separate from `notes` so it can be surfaced
+  /// on the following day's run.
+  nextVisitNote        String?
+
+  /// Order the checkpoint was recorded in, so the route can be replayed in the
+  /// sequence actually driven.
+  sequence             Int              @default(0)
+
   timestamp            DateTime         @default(now())
+
+  @@index([trainingSessionId, sequence])
 }
 
 model GPSPoint {
@@ -258,9 +355,23 @@ model Issue {
   entityType  String   // e.g., "Location", "Route", "Delivery"
   entityId    String
   description String
+
+  /// Coarse bucket chosen from a dropdown, so issues can be counted and
+  /// filtered without parsing free text.
+  category    String?
+
   status      String   @default("OPEN")
+
+  routeRunId  String?
+  routeRun    RouteRun? @relation(fields: [routeRunId], references: [id])
+
+  latitude    Float?
+  longitude   Float?
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([status, createdAt])
 }
 
 model AuditLog {
@@ -287,4 +398,46 @@ model LocationHistory {
   newLongitude       Float?
   reason             String?
   timestamp          DateTime         @default(now())
+}
+
+/// Key/value store for admin-configurable settings (e.g. whether delivery
+/// agents may publish routes without approval). Kept as a generic KV table so
+/// new toggles do not require a migration each time.
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+/// A one-time 6-digit email verification code.
+///
+/// Only a hash of the code is stored, so a database leak does not hand out
+/// working codes. `attempts` is incremented on every wrong guess and the row is
+/// burned past a threshold, which is what stops a 6-digit space (1e6) from
+/// being brute-forced.
+model EmailVerificationCode {
+  id         String    @id @default(uuid())
+  email      String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([email, consumedAt])
+}
+
+/// A single-use password reset token, delivered as a link.
+///
+/// Same reasoning as above: the token is stored hashed, expires, and is marked
+/// consumed the moment it is redeemed so a link cannot be replayed.
+model PasswordResetToken {
+  id         String    @id @default(uuid())
+  email      String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([email, consumedAt])
 }

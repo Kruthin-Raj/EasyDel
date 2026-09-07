@@ -1,26 +1,362 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ==========================================================================
+   EasyDel — operations console
+   --------------------------------------------------------------------------
+   A dark, dense, signal-driven interface for people watching a delivery fleet
+   for a whole shift. Reference points are dispatch consoles and flight-ops
+   boards, not generic SaaS: near-black field, one amber accent for action,
+   and status colours that read at a glance without being decorative.
+
+   Everything is expressed as semantic tokens (surface / panel / ink / line /
+   accent) rather than raw palette classes, so a page never hardcodes a colour
+   and the whole product can be retoned from this file alone.
+
+   Note: colours are defined ONLY here and applied via Tailwind utilities.
+   Do not add a bare `body { color: ... }` rule — an unlayered element selector
+   outranks Tailwind's layered utilities and will silently override them. That
+   is exactly what previously produced dark-on-dark text.
+   ========================================================================== */
+
+@theme {
+  /* --- surfaces, back to front --- */
+  --color-surface: #0a0e13;
+  --color-surface-2: #0f151d;
+  --color-panel: #131b25;
+  --color-panel-2: #18222e;
+  --color-line: #22303f;
+  --color-line-bright: #2e4054;
+
+  /* --- text, brightest to faintest --- */
+  --color-ink: #e9f0f7;
+  --color-ink-dim: #9fb0c2;
+  --color-ink-faint: #6d8096;
+
+  /* --- amber accent: actions and the live/current state --- */
+  --color-accent: #f5a524;
+  --color-accent-bright: #ffb84d;
+  --color-accent-dim: #7a5310;
+  --color-accent-ink: #1a1204;
+
+  /* --- status signals --- */
+  --color-ok: #34d399;
+  --color-ok-dim: #0f3d2e;
+  --color-warn: #fbbf24;
+  --color-warn-dim: #43310a;
+  --color-bad: #f87171;
+  --color-bad-dim: #451c1c;
+  --color-info: #56ccf2;
+  --color-info-dim: #0e3547;
+  --color-idle: #7d8fa1;
+  --color-idle-dim: #22303f;
+
+  /* --- type --- */
+  --font-sans: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* --------------------------------------------------------------------------
+   Atmosphere. A dark flat field reads as cheap; these two layers give the
+   console some depth without costing a repaint. Both are decorative and
+   pointer-transparent.
+   -------------------------------------------------------------------------- */
+
+.console-field {
+  position: relative;
+  isolation: isolate;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* Faint engineering grid, brightest at the top-left where the eye enters. */
+.console-field::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, color-mix(in oklab, var(--color-line) 55%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--color-line) 55%, transparent) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(120% 100% at 0% 0%, #000 0%, transparent 70%);
+}
+
+/* Grain, so large dark areas are not dead flat. */
+.console-field::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* --------------------------------------------------------------------------
+   Type treatment
+   -------------------------------------------------------------------------- */
+
+h1, h2, h3 {
+  text-wrap: balance;
+  letter-spacing: -0.018em;
+}
+
+/* Section eyebrows and column headers: small, wide, unmistakably a label. */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* Figures line up in columns and never reflow as they tick. */
+.numeric {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.break-anywhere {
+  overflow-wrap: anywhere;
+}
+
+/* --------------------------------------------------------------------------
+   Live indicator — the one piece of motion in the chrome, reserved for
+   "something is happening right now" so it keeps its meaning.
+   -------------------------------------------------------------------------- */
+
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-ok) 55%, transparent); }
+  70%  { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+.live-dot {
+  animation: pulse-ring 2.4s ease-out infinite;
+}
+
+@keyframes sweep-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Staggered entrance on first paint. One orchestrated reveal, not scattered
+   micro-animations. */
+.stagger > * {
+  animation: sweep-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+.stagger > *:nth-child(1) { animation-delay: 0.02s; }
+.stagger > *:nth-child(2) { animation-delay: 0.06s; }
+.stagger > *:nth-child(3) { animation-delay: 0.10s; }
+.stagger > *:nth-child(4) { animation-delay: 0.14s; }
+.stagger > *:nth-child(5) { animation-delay: 0.18s; }
+.stagger > *:nth-child(6) { animation-delay: 0.22s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot,
+  .stagger > * {
+    animation: none;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* --------------------------------------------------------------------------
+   Form controls. Styled once here so every input matches without each page
+   repeating a dozen utilities.
+   -------------------------------------------------------------------------- */
+
+.field {
+  width: 100%;
+  border-radius: 0.5rem;
+  background-color: var(--color-surface-2);
+  padding: 0.5rem 0.75rem;
+  color: var(--color-ink);
+  box-shadow: inset 0 0 0 1px var(--color-line);
+  transition: box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+.field::placeholder {
+  color: var(--color-ink-faint);
+}
+
+.field:hover {
+  box-shadow: inset 0 0 0 1px var(--color-line-bright);
+}
+
+.field:focus {
+  outline: none;
+  background-color: var(--color-surface);
+  box-shadow:
+    inset 0 0 0 1px var(--color-accent),
+    0 0 0 3px color-mix(in oklab, var(--color-accent) 18%, transparent);
+}
+
+.field:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Native date/number widgets are unreadable on dark without this. */
+.field::-webkit-calendar-picker-indicator {
+  filter: invert(0.75);
+  cursor: pointer;
+}
+
+select.field {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%239fb0c2' stroke-width='1.6'%3E%3Cpath d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+  padding-right: 2rem;
+}
+
+/* Checkboxes: square, amber when on, to match the console language. */
+.check {
+  appearance: none;
+  height: 1rem;
+  width: 1rem;
+  flex-shrink: 0;
+  border-radius: 0.25rem;
+  background-color: var(--color-surface-2);
+  box-shadow: inset 0 0 0 1px var(--color-line-bright);
+  transition: background-color 0.12s ease, box-shadow 0.12s ease;
+  cursor: pointer;
+}
+
+.check:checked {
+  background-color: var(--color-accent);
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%231a1204' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6.5 5 9l4.5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.check:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   Scrollbars — default light scrollbars on a dark field look broken.
+   -------------------------------------------------------------------------- */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-bright) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-line-bright);
+  border-radius: 9999px;
+  border: 2px solid var(--color-surface);
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-ink-faint);
+}
+
+::selection {
+  background-color: color-mix(in oklab, var(--color-accent) 32%, transparent);
+  color: var(--color-ink);
+}
+
+/* --------------------------------------------------------------------------
+   MapLibre overrides.
+
+   The default popup is a white box. Inside a dark app it inherits the page's
+   near-white text colour and renders white-on-white — the label was there but
+   unreadable. Restyle the popup rather than fighting the inherited colour.
+   -------------------------------------------------------------------------- */
+
+/*
+ * Scoped one level deeper than MapLibre's own `.maplibregl-popup-content`.
+ * Equal specificity would leave the winner down to stylesheet order, and
+ * maplibre-gl.css is imported from a component so it can land in a later
+ * chunk — the popup would then be white-on-white again, intermittently.
+ */
+.maplibregl-popup .maplibregl-popup-content {
+  background: var(--color-panel-2);
+  color: var(--color-ink);
+  border: 1px solid var(--color-line-bright);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.7);
+}
+
+/* The little arrow is a separate element and must match the box. */
+.maplibregl-popup-anchor-top .maplibregl-popup-tip { border-bottom-color: var(--color-panel-2); }
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip { border-top-color: var(--color-panel-2); }
+.maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: var(--color-panel-2); }
+.maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: var(--color-panel-2); }
+
+.maplibregl-popup .maplibregl-popup-close-button {
+  color: var(--color-ink-dim);
+  font-size: 1rem;
+}
+.maplibregl-popup .maplibregl-popup-close-button:hover {
+  background: transparent;
+  color: var(--color-ink);
+}
+
+/* Zoom buttons and the attribution pill default to white too. */
+.maplibregl-ctrl .maplibregl-ctrl-group,
+.maplibregl-ctrl-group.maplibregl-ctrl-group {
+  background: var(--color-panel-2);
+  border: 1px solid var(--color-line-bright);
+}
+.maplibregl-ctrl-group.maplibregl-ctrl-group button + button {
+  border-top-color: var(--color-line-bright);
+}
+.maplibregl-ctrl-group.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(0.85);
+}
+.maplibregl-ctrl-attrib {
+  background: color-mix(in oklab, var(--color-surface) 85%, transparent) !important;
+  color: var(--color-ink-dim);
+}
+.maplibregl-ctrl-attrib a {
+  color: var(--color-ink-dim);
+}
+
+/* --------------------------------------------------------------------------
+   Driver marker: a dot for position, a cone for heading.
+
+   The cone is hidden until a heading is known, so a stationary driver does not
+   see an arrow confidently pointing the wrong way.
+   -------------------------------------------------------------------------- */
+
+.easydel-driver {
+  position: relative;
+  width: 22px;
+  height: 22px;
+}
+
+.easydel-driver-dot {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: #2f7dfb;
+  box-shadow:
+    0 0 0 4px color-mix(in oklab, #2f7dfb 28%, transparent),
+    0 1px 4px rgba(0, 0, 0, 0.55);
+}
+
+/* Triangle pointing "up" — the marker itself is rotated to the heading. */
+.easydel-driver-cone {
+  position: absolute;
+  left: 50%;
+  bottom: 50%;
+  width: 0;
+  height: 0;
+  transform: translateX(-50%);
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-bottom: 22px solid color-mix(in oklab, #2f7dfb 65%, transparent);
+  transition: opacity 0.3s ease;
 }

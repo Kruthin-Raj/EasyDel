@@ -1,5 +1,7 @@
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
+import { seesAllData } from '@/lib/scope';
+import Forbidden from '@/components/Forbidden';
 import { PageHeader, Card, StatCard, Table, Td, EmptyState, metres, duration } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
@@ -52,7 +54,25 @@ function BarChart({
 }
 
 export default async function ReportsPage() {
-  await requireUser();
+  const user = await requireUser();
+
+  /*
+   * Reports aggregate the whole operation — every driver's deliveries, every
+   * route's distance. There is no meaningful way to scope that to one agent
+   * (a report of yourself is just your delivery history), so the page is
+   * limited to the roles that supervise. The nav link is hidden for agents to
+   * match; this is the check that holds for a typed URL.
+   */
+  if (!seesAllData(user)) {
+    return (
+      <Forbidden
+        title="Reports cover the whole operation"
+        reason="These figures combine every driver's deliveries and routes, so they are limited to administrators and mentors."
+        role={user.role}
+        hint="Your own deliveries, with a per-round report, are under Delivery history."
+      />
+    );
+  }
 
   const [byStatus, routeAgg, stopCount, training, drivers, locationsByStatus] = await Promise.all([
     db.delivery.groupBy({ by: ['status'], _count: { _all: true }, _sum: { quantity: true } }),

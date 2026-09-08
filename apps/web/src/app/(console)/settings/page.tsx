@@ -1,6 +1,6 @@
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
-import { can } from '@/lib/permissions';
+import { can, checkpointTypesKey, parseCheckpointTypes } from '@/lib/permissions';
 import Forbidden from '@/components/Forbidden';
 import { saveSettingsAction } from '@/lib/actions';
 import { SETTING_DEFAULTS } from '@/lib/settings';
@@ -42,6 +42,15 @@ export default async function SettingsPage() {
   const rows = await db.setting.findMany();
   const current: Record<string, string> = { ...SETTING_DEFAULTS };
   for (const r of rows) current[r.key] = r.value;
+
+  /*
+   * The list this user actually edits.
+   *
+   * An admin maintains the shared team default; an agent maintains their own
+   * namespaced list, pre-filled from the shared one so their first save starts
+   * from the team's vocabulary rather than an empty box.
+   */
+  const ownTypes = parseCheckpointTypes(current, isAdmin ? undefined : user.id);
 
   return (
     <>
@@ -90,18 +99,23 @@ export default async function SettingsPage() {
                 <legend className="px-1 text-sm font-semibold text-ink">Package types</legend>
                 <label className="block">
                   <span className="mb-1.5 block text-sm font-medium text-ink">
-                    Options offered when recording a checkpoint
+                    {isAdmin
+                      ? 'Options offered when recording a checkpoint (team default)'
+                      : 'Your own options when recording a checkpoint'}
                   </span>
                   <textarea
                     name="checkpoint_type_options"
                     rows={6}
-                    defaultValue={current.checkpoint_type_options}
+                    defaultValue={ownTypes.join('\n')}
                     className="field resize-y font-mono text-sm"
                   />
                   <span className="mt-1.5 block text-xs text-ink-dim">
-                    One per line. These fill the dropdown drivers pick from at each house &mdash;
-                    use your own vocabulary, e.g. &ldquo;Large package&rdquo;, &ldquo;Small
+                    One per line. These fill the dropdown you pick from at each house &mdash; use
+                    your own vocabulary, e.g. &ldquo;Large package&rdquo;, &ldquo;Small
                     package&rdquo;. Leave empty to restore the defaults.
+                    {isAdmin
+                      ? ' This is the shared default for every agent who has not set their own.'
+                      : ' This list is yours alone — editing it does not change any other agent’s.'}
                   </span>
                 </label>
               </fieldset>

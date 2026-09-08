@@ -1,13 +1,34 @@
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
-import { createUserAction, toggleDriverActiveAction } from '@/lib/actions';
+import { toggleDriverActiveAction } from '@/lib/actions';
+import Forbidden from '@/components/Forbidden';
 import DriverForm from './DriverForm';
-import { PageHeader, Card, Table, Td, Badge, EmptyState, Button, Field, when } from '@/components/ui';
+import { PageHeader, Card, Table, Td, Badge, EmptyState, Button, when } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
 
 export default async function DriversPage() {
-  await requireUser();
+  const user = await requireUser();
+
+  /*
+   * Managing accounts is administrator work.
+   *
+   * This page used to require only a signed-in user while every button on it
+   * called an ADMIN-only action, so an agent could open it, press "Deactivate"
+   * and get an unhandled throw — Next's error screen, with no explanation.
+   * The link is now hidden for agents too (see `lib/nav.ts`); this is the
+   * check that actually holds, for a typed URL or a stale tab.
+   */
+  if (user.role !== 'ADMIN') {
+    return (
+      <Forbidden
+        title="Delivery agents are managed by an administrator"
+        reason="This page creates accounts and activates or deactivates them, which only an administrator can do."
+        role={user.role}
+        hint="You can still see and run the routes assigned to you, and record new ones."
+      />
+    );
+  }
 
   const drivers = await db.driverProfile.findMany({
     include: {

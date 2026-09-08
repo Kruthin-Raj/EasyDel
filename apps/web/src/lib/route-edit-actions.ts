@@ -457,3 +457,39 @@ export async function restoreRouteAction(formData: FormData) {
   revalidatePath('/routes');
   revalidatePath(`/routes/${routeId}`);
 }
+
+/** Renames a route without creating a new version. */
+export async function renameRouteAction(_prev: EditState, formData: FormData): Promise<EditState> {
+  const user = await requireUser();
+  const routeId = String(formData.get('routeId') ?? '');
+  const newName = String(formData.get('name') ?? '').trim().slice(0, 100);
+
+  if (!newName) return { error: 'Provide a name for the route.' };
+
+  const { error, route } = await editableRoute(routeId, user.id, user.role);
+  if (error || !route) return { error: error ?? 'Route not found.' };
+
+  if (route.name === newName) return { success: 'Name unchanged.' };
+
+  await db.route.update({
+    where: { id: routeId },
+    data: { name: newName },
+  });
+
+  await db.auditLog.create({
+    data: {
+      userId: user.id,
+      action: 'ROUTE_CHANGED',
+      entityType: 'Route',
+      entityId: routeId,
+      oldValue: route.name,
+      newValue: newName,
+      reason: 'Renamed route',
+    },
+  });
+
+  revalidatePath('/routes');
+  revalidatePath(`/routes/${routeId}`);
+  revalidatePath(`/routes/${routeId}/edit`);
+  return { success: 'Route renamed.' };
+}

@@ -8,10 +8,14 @@
     "build": "prisma generate",
     "typecheck": "tsc --noEmit",
     "db:generate": "prisma generate",
-    "db:push": "prisma db push",
-    "db:migrate": "prisma migrate dev",
+    "db:push": "node scripts/guard-destructive.mjs \"prisma db push\" && prisma db push",
+    "db:migrate": "node scripts/guard-destructive.mjs \"prisma migrate dev\" && prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
-    "db:seed": "node prisma/seed.mjs"
+    "db:seed": "node prisma/seed.mjs",
+    "db:reset": "node scripts/guard-destructive.mjs \"prisma migrate reset\" && prisma migrate reset",
+    "db:migrate:new": "node scripts/new-migration.mjs",
+    "db:make-admin": "node scripts/make-admin.mjs",
+    "test:fixtures": "node scripts/test-fixtures.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.4.1"

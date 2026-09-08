@@ -152,11 +152,7 @@ export async function startRunAction(_prev: RunState, formData: FormData): Promi
   });
 
   revalidatePath(`/routes/${routeId}/run`);
-  return {
-    success: stopOrder
-      ? 'Route started, ordered from where you are now.'
-      : 'Route started. Work the stops in order.',
-  };
+  redirect(`/routes/${routeId}/run`);
 }
 
 // ---------------------------------------------------------- outcomes -------
@@ -254,6 +250,13 @@ async function recordOutcome(
     })),
   });
 
+  if (notes) {
+    await db.deliveryLocation.update({
+      where: { id: stop.deliveryLocationId },
+      data: { nextVisitNote: notes },
+    });
+  }
+
   await db.auditLog.create({
     data: {
       userId: user.id,
@@ -308,6 +311,28 @@ export async function undoStopOutcomeAction(formData: FormData) {
       routeRunId: runId,
       subscription: { deliveryLocationId: stop.deliveryLocationId },
     },
+  });
+
+  revalidatePath(`/routes/${run.routeVersion.routeId}/run`);
+}
+
+export async function clearNextVisitNoteAction(formData: FormData) {
+  const user = await requireUser();
+  const runId = String(formData.get('runId') ?? '');
+  const stopId = String(formData.get('stopId') ?? '');
+
+  const run = await ownedRun(runId, user.id, user.role);
+  if (!run || run.status !== 'IN_PROGRESS') return;
+
+  const stop = await db.routeStop.findUnique({
+    where: { id: stopId },
+    select: { deliveryLocationId: true },
+  });
+  if (!stop) return;
+
+  await db.deliveryLocation.update({
+    where: { id: stop.deliveryLocationId },
+    data: { nextVisitNote: null },
   });
 
   revalidatePath(`/routes/${run.routeVersion.routeId}/run`);

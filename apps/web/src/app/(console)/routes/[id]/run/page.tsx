@@ -134,6 +134,7 @@ export default async function RunPage({
       latitude: stop.deliveryLocation.latitude,
       longitude: stop.deliveryLocation.longitude,
       notes: stop.deliveryLocation.notes,
+      previousNote: stop.deliveryLocation.nextVisitNote,
       floor: stop.deliveryLocation.floor,
       unit: stop.deliveryLocation.unit,
       entranceInstructions: stop.deliveryLocation.entranceInstructions,

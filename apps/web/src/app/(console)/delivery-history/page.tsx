@@ -1,7 +1,9 @@
+import Link from 'next/link';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
+import { deliveryWhere, issueWhere, seesAllData } from '@/lib/scope';
 import { setIssueStatusAction } from '@/lib/actions';
-import { PageHeader, Card, Table, Td, Badge, EmptyState, Button, when } from '@/components/ui';
+import { PageHeader, Card, Table, Td, Badge, EmptyState, Button, Notice, when } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,12 +14,26 @@ export default async function DeliveryHistoryPage({
 }: {
   searchParams: Promise<{ status?: string }>;
 }) {
-  await requireUser();
+  const user = await requireUser();
   const { status = 'ALL' } = await searchParams;
+
+  /*
+   * Scoped, not global.
+   *
+   * These queries had no `where` beyond the status filter, so every agent's
+   * Delivery history listed every other agent's deliveries and every issue
+   * anyone had reported — other people's customers and addresses included.
+   * An agent now sees the runs they performed and the issues they raised;
+   * admins and mentors still see the whole operation.
+   */
+  const mine = !seesAllData(user);
 
   const [deliveries, issues] = await Promise.all([
     db.delivery.findMany({
-      where: status !== 'ALL' ? { status: status as never } : {},
+      where: {
+        ...deliveryWhere(user),
+        ...(status !== 'ALL' ? { status: status as never } : {}),
+      },
       include: {
         subscription: { include: { deliveryLocation: true } },
         routeVersion: { include: { route: true } },
@@ -25,15 +41,29 @@ export default async function DeliveryHistoryPage({
       orderBy: { updatedAt: 'desc' },
       take: 200,
     }),
-    db.issue.findMany({ orderBy: [{ status: 'asc' }, { createdAt: 'desc' }] }),
+    db.issue.findMany({
+      where: issueWhere(user),
+      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+    }),
   ]);
 
   return (
     <>
       <PageHeader
         title="Delivery history"
-        subtitle="Immutable record of every delivery attempt, including failures and skips with reasons."
+        subtitle={
+          mine
+            ? 'Every delivery you have recorded, including failures and skips with reasons.'
+            : 'Immutable record of every delivery attempt, including failures and skips with reasons.'
+        }
       />
+
+      {mine && (
+        <Notice>
+          You are seeing your own deliveries and the issues you reported. Administrators see the
+          whole operation.
+        </Notice>
+      )}
 
       <Card>
         <form className="flex flex-wrap items-end gap-3 border-b border-line px-5 py-4">
@@ -61,9 +91,13 @@ export default async function DeliveryHistoryPage({
             {deliveries.map((d) => (
               <tr key={d.id} className="align-top hover:bg-panel-2/60">
                 <Td>
-                  <p className="font-medium text-ink">
+                  {/* The whole row's subject is a link to the run report. */}
+                  <Link
+                    href={`/delivery-history/${d.id}`}
+                    className="font-medium text-ink underline decoration-line-bright underline-offset-2 hover:decoration-accent"
+                  >
                     {d.subscription.deliveryLocation.name}
-                  </p>
+                  </Link>
                   <p className="text-xs text-ink-dim">
                     {d.subscription.deliveryLocation.address}
                   </p>

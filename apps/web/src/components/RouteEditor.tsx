@@ -8,6 +8,7 @@ type State = { error?: string; success?: string; info?: string } | null;
 
 export type EditorStop = {
   id: string;
+  locationId: string;
   sequence: number;
   name: string;
   address: string;
@@ -85,6 +86,7 @@ export default function RouteEditor({
   removeStopAction,
   reoptimiseAction,
   deleteRouteAction,
+  renameRouteAction,
   hasHistory,
   deliveryCount,
   runCount,
@@ -99,6 +101,7 @@ export default function RouteEditor({
   removeStopAction: (formData: FormData) => Promise<void>;
   reoptimiseAction: (formData: FormData) => Promise<void>;
   deleteRouteAction: (prev: State, formData: FormData) => Promise<State>;
+  renameRouteAction: (prev: State, formData: FormData) => Promise<State>;
   hasHistory: boolean;
   deliveryCount: number;
   runCount: number;
@@ -108,11 +111,28 @@ export default function RouteEditor({
   const [linkState, runLink] = useActionState(addByLinkAction, null);
   const [pickState, runPick] = useActionState(addFromLocationAction, null);
   const [deleteState, runDelete] = useActionState(deleteRouteAction, null);
+  const [renameState, runRename] = useActionState(renameRouteAction, null);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_minmax(0,22rem)]">
-      {/* ------------------------------- stops ------------------------------ */}
-      <section className="rounded-xl border border-line bg-panel">
+      <div className="space-y-6">
+        {/* ------------------------------- rename ------------------------------ */}
+        <section className="rounded-xl border border-line bg-panel p-5">
+          <form action={runRename} className="flex flex-wrap items-end gap-3">
+            <div className="flex-1 min-w-[200px]">
+              <label className="block text-sm font-medium text-ink mb-1.5">Route name</label>
+              <input name="name" defaultValue={routeName} required className="field" />
+              <input type="hidden" name="routeId" value={routeId} />
+            </div>
+            <Submit label="Save name" pendingLabel="Saving…" />
+          </form>
+          <div className="mt-3">
+            <Banner state={renameState} />
+          </div>
+        </section>
+
+        {/* ------------------------------- stops ------------------------------ */}
+        <section className="rounded-xl border border-line bg-panel">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
           <div>
             <h2 className="text-sm font-semibold text-ink">Stops ({stops.length})</h2>
@@ -161,23 +181,35 @@ export default function RouteEditor({
                   )}
                 </div>
 
-                <form action={removeStopAction}>
-                  <input type="hidden" name="routeId" value={routeId} />
-                  <input type="hidden" name="stopId" value={stop.id} />
-                  <button
-                    type="submit"
-                    title={`Remove ${stop.name} from this route`}
-                    className="rounded-md p-2 text-ink-faint transition-colors hover:bg-bad-dim hover:text-bad"
+                <div className="flex flex-col gap-1">
+                  <a
+                    href={`/locations/${stop.locationId}/edit`}
+                    target="_blank"
+                    title={`Edit checkpoint`}
+                    className="inline-flex items-center justify-center rounded-md p-2 text-ink-faint transition-colors hover:bg-panel-2 hover:text-ink"
                   >
-                    <Trash2 className="h-4 w-4" aria-hidden />
-                    <span className="sr-only">Remove {stop.name} from this route</span>
-                  </button>
-                </form>
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                    <span className="sr-only">Edit {stop.name}</span>
+                  </a>
+                  <form action={removeStopAction}>
+                    <input type="hidden" name="routeId" value={routeId} />
+                    <input type="hidden" name="stopId" value={stop.id} />
+                    <button
+                      type="submit"
+                      title={`Remove ${stop.name} from this route`}
+                      className="rounded-md p-2 text-ink-faint transition-colors hover:bg-bad-dim hover:text-bad"
+                    >
+                      <Trash2 className="h-4 w-4" aria-hidden />
+                      <span className="sr-only">Remove {stop.name} from this route</span>
+                    </button>
+                  </form>
+                </div>
               </li>
             ))}
           </ul>
         )}
       </section>
+      </div>
 
       <div className="space-y-6">
         {/* ---------------------------- add a stop --------------------------- */}
@@ -186,12 +218,12 @@ export default function RouteEditor({
             <h2 className="text-sm font-semibold text-ink">Add a stop</h2>
           </header>
 
-          {/* Two ways in: a fresh map link, or a checkpoint already saved. */}
+          {/* Two ways in: a fresh location (by link/coords), or a checkpoint already saved. */}
           <div className="flex gap-1 border-b border-line px-3 pt-3">
             {(
               [
-                ['link', 'Map link', Link2],
-                ['checkpoint', 'Saved checkpoint', MapPin],
+                ['link', 'Create checkpoint', MapPin],
+                ['checkpoint', 'Saved checkpoint', Link2],
               ] as const
             ).map(([key, label, Icon]) => (
               <button
@@ -217,20 +249,20 @@ export default function RouteEditor({
 
               <label className="block">
                 <span className="mb-1.5 block text-sm font-medium text-ink">
-                  Map link or coordinates <span className="text-accent">*</span>
+                  Location (Map link or coordinates) <span className="text-accent">*</span>
                 </span>
                 <textarea
                   name="link"
                   rows={3}
                   required
-                  placeholder="https://maps.app.goo.gl/…  or  13.6288, 79.4192"
+                  placeholder="Paste a Google Maps link or Lat, Lng (e.g. 13.6288, 79.4192)"
                   className="field resize-y font-mono text-xs"
                 />
               </label>
 
               <label className="block">
-                <span className="mb-1.5 block text-sm font-medium text-ink">Name</span>
-                <input name="name" placeholder="Optional — taken from the link" className="field" />
+                <span className="mb-1.5 block text-sm font-medium text-ink">Checkpoint name</span>
+                <input name="name" placeholder="Optional — automatically taken from the link if left blank" className="field" />
               </label>
 
               <div className="grid grid-cols-2 gap-3">

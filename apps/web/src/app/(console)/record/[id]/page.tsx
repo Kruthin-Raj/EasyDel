@@ -5,6 +5,7 @@ import { loadSettings, parseCheckpointTypes } from '@/lib/permissions';
 import { abandonRecordingAction } from '@/lib/recording-actions';
 import { signedPhotoUrl } from '@/lib/storage';
 import RecordingConsole from '@/components/RecordingConsole';
+import { readNameOptions, roundTypeOptions } from '@/lib/name-options';
 import Forbidden from '@/components/Forbidden';
 import { PageHeader } from '@/components/ui';
 
@@ -40,7 +41,21 @@ export default async function RecordingPage({ params }: { params: Promise<{ id: 
   if (session.status !== 'RECORDING') redirect(`/training-routes/${session.id}`);
 
   const settings = await loadSettings();
-  const deliveryTypes = parseCheckpointTypes(settings);
+
+  /*
+   * Package types for THIS round.
+   *
+   * The list pasted for the round wins; failing that, any type already used at
+   * a checkpoint on this round is offered again; failing that, the agent's own
+   * list, then the team's, then the built-in defaults. Route-to-route rather
+   * than global, because what is being carried changes per round — and because
+   * the shared Settings row is one value for the whole team.
+   */
+  const deliveryTypes = roundTypeOptions({
+    stored: session.typeOptions,
+    usedOnRound: session.checkpoints.map((c) => c.deliveryType),
+    fallback: parseCheckpointTypes(settings, user.id),
+  });
 
   const checkpointsWithPhotos = await Promise.all(
     session.checkpoints.map(async (c) => {
@@ -75,6 +90,7 @@ export default async function RecordingPage({ params }: { params: Promise<{ id: 
           routeName={session.routeName}
           startedAt={session.startedAt.toISOString()}
           deliveryTypes={deliveryTypes}
+          nameOptions={readNameOptions(session.nameOptions)}
           checkpoints={checkpointsWithPhotos.map((c) => ({
             id: c.id,
             name: c.name,

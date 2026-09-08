@@ -1,13 +1,25 @@
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { createUserAction } from '@/lib/actions';
+import Forbidden from '@/components/Forbidden';
 import ActionForm from '@/components/ActionForm';
 import { PageHeader, Card, Table, Td, Badge, EmptyState, Field, when, duration, metres } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
 
 export default async function MentorsPage() {
-  await requireUser();
+  const user = await requireUser();
+
+  // Creating mentor accounts is administrator work, same as Drivers.
+  if (user.role !== 'ADMIN') {
+    return (
+      <Forbidden
+        title="Mentors are managed by an administrator"
+        reason="This page creates mentor accounts, which only an administrator can do."
+        role={user.role}
+      />
+    );
+  }
 
   const mentors = await db.mentorProfile.findMany({
     include: { user: { include: { trainingSessions: true } } },

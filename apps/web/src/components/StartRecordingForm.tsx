@@ -33,10 +33,8 @@ function StartButton({ ready }: { ready: boolean }) {
  */
 export default function StartRecordingForm({
   action,
-  mentors,
 }: {
   action: (prev: State, formData: FormData) => Promise<State>;
-  mentors: { id: string; firstName: string; lastName: string; role: string }[];
 }) {
   const [state, formAction] = useActionState(action, null);
   const [fix, setFix] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
@@ -92,17 +90,34 @@ export default function StartRecordingForm({
       </label>
 
       <label className="block">
-        <span className="mb-1.5 block text-sm font-medium text-ink">Riding with</span>
-        <select name="mentorId" className="field" defaultValue="">
-          <option value="">Just me</option>
-          {mentors.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.firstName} {m.lastName} ({m.role.toLowerCase()})
-            </option>
-          ))}
-        </select>
+        <span className="mb-1.5 block text-sm font-medium text-ink">
+          House names <span className="text-ink-faint">(optional)</span>
+        </span>
+        <textarea
+          name="nameOptions"
+          rows={4}
+          placeholder={'One per line, e.g.\nMr Sharma — 12 Green Street\nAvengers Tower flat 3B\nCorner shop'}
+          className="field resize-y"
+        />
         <span className="mt-1.5 block text-xs text-ink-dim">
-          Pick your mentor if someone is showing you the round.
+          Paste the round’s names now and each checkpoint will offer them as a dropdown, so you
+          can pick instead of typing a long name at the gate. You can always type a new one.
+        </span>
+      </label>
+
+      <label className="block">
+        <span className="mb-1.5 block text-sm font-medium text-ink">
+          Package types for this round <span className="text-ink-faint">(optional)</span>
+        </span>
+        <textarea
+          name="typeOptions"
+          rows={3}
+          placeholder={'One per line, e.g.\nBig box\nSmall box\nFruit crate'}
+          className="field resize-y"
+        />
+        <span className="mt-1.5 block text-xs text-ink-dim">
+          What you are carrying today. Kept to this round only, so it never changes another
+          agent&rsquo;s list. Leave empty to use your usual types.
         </span>
       </label>
 

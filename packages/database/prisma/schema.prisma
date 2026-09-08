@@ -101,6 +101,7 @@ model DeliveryLocation {
   longitude            Float
   photo                String?
   notes                String?
+  nextVisitNote        String?
   floor                String?
   unit                 String?
   entranceInstructions String?
@@ -289,6 +290,21 @@ model TrainingSession {
   /// The agent recording the session, when they started it themselves rather
   /// than a mentor doing it for them.
   recordedById   String?
+
+  /// Optional house/customer names pasted before the round starts, newline
+  /// separated. Offered as a dropdown on the checkpoint form so the agent can
+  /// pick a name instead of typing a long one at the gate — they can still
+  /// type anything, this is a shortcut and not a constraint.
+  nameOptions    String?
+
+  /// Package names/types for THIS round, newline separated.
+  ///
+  /// Deliberately per-round: what is being carried changes from route to
+  /// route, and the shared Settings list is a single row for the whole team,
+  /// so editing it there changed every agent's dropdown at once. When unset,
+  /// the round falls back to the agent's own list, then the team's, then the
+  /// built-in defaults.
+  typeOptions    String?
 
   /// Set once a delivery route has been generated from this session, so the
   /// same first-day recording is not turned into duplicate routes.

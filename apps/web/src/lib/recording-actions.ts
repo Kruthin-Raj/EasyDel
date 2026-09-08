@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { db } from './db';
 import { requireUser } from './auth';
 import { requireCapability } from './permissions';
+import { parseNameOptions } from './name-options';
 import { uploadPhoto, ensureBucket } from './storage';
 import { isValidCoord, haversine, optimizeRoute, refineWithOsrm, type Point } from './optimize';
 
@@ -28,6 +29,8 @@ function text(form: FormData, key: string, max = 300) {
   return String(form.get(key) ?? '').trim().slice(0, max);
 }
 
+
+
 // ------------------------------------------------------------ session -------
 
 export async function startRecordingAction(
@@ -48,9 +51,16 @@ export async function startRecordingAction(
     };
   }
 
-  // A driver recording alone is normal on day one; the mentor field is only
-  // filled when someone is actually riding with them.
-  const mentorId = String(formData.get('mentorId') ?? '') || user.id;
+  /*
+   * The "riding with" picker was removed — agents record their own rounds and
+   * nobody was using it.
+   *
+   * `TrainingSession.mentorId` is still a required column, and existing rows
+   * depend on it, so it points at whoever recorded the round. That keeps the
+   * schema and old sessions valid without a migration; `recordedById` is the
+   * field that actually means anything now.
+   */
+  const mentorId = user.id;
 
   const existing = await db.trainingSession.findFirst({
     where: { recordedById: user.id, status: 'RECORDING' },
@@ -62,6 +72,17 @@ export async function startRecordingAction(
     redirect(`/record/${existing.id}`);
   }
 
+  /*
+   * Optional list of house names for this round, one per line.
+   *
+   * Offered as a dropdown on the checkpoint form so a long name can be picked
+   * rather than typed at the gate. Normalised here — blank lines dropped,
+   * duplicates removed, order preserved — so the form can render it directly.
+   */
+  const nameOptions = parseNameOptions(String(formData.get('nameOptions') ?? ''));
+  // Package types for this round only — see TrainingSession.typeOptions.
+  const typeOptions = parseNameOptions(String(formData.get('typeOptions') ?? ''));
+
   const session = await db.trainingSession.create({
     data: {
       routeName,
@@ -70,6 +91,8 @@ export async function startRecordingAction(
       recordedById: user.id,
       status: 'RECORDING',
       geometry: JSON.stringify([[lng, lat]]),
+      nameOptions: nameOptions.length > 0 ? nameOptions.join('\n') : null,
+      typeOptions: typeOptions.length > 0 ? typeOptions.join('\n') : null,
     },
   });
 
@@ -224,6 +247,120 @@ export async function toggleCheckpointCompleteAction(formData: FormData) {
     data: { completedAt: checkpoint.completedAt ? null : new Date() },
   });
   revalidatePath(`/record/${session.id}`);
+}
+
+/**
+ * Edits a checkpoint already logged.
+ *
+ * Only while the session is still recording: a finished session is the record
+ * of what happened on the day and must not be quietly rewritten. Fields left
+ * blank are cleared rather than ignored, so a wrong note can be removed.
+ */
+export async function updateCheckpointAction(
+  _prev: RecState,
+  formData: FormData,
+): Promise<RecState> {
+  const user = await requireUser();
+  const id = String(formData.get('checkpointId') ?? '');
+
+  const checkpoint = await db.trainingCheckpoint.findUnique({
+    where: { id },
+    include: {
+      trainingSession: {
+        select: { id: true, recordedById: true, traineeId: true, status: true },
+      },
+    },
+  });
+  if (!checkpoint) return { error: 'That checkpoint no longer exists.' };
+
+  const session = checkpoint.trainingSession;
+  if (session.status !== 'RECORDING') {
+    return { error: 'This round is finished, so its checkpoints can no longer be edited.' };
+  }
+  if (
+    session.recordedById !== user.id &&
+    session.traineeId !== user.id &&
+    user.role !== 'ADMIN'
+  ) {
+    return { error: 'This is not your recording session.' };
+  }
+
+  const name = text(formData, 'name', 120);
+  if (!name) return { error: 'Give the house or building a name.' };
+
+  const quantityRaw = String(formData.get('quantity') ?? '').trim();
+  const quantity = quantityRaw === '' ? null : Number(quantityRaw);
+  if (quantity !== null && (!Number.isInteger(quantity) || quantity < 0)) {
+    return { error: 'Quantity must be a whole number.' };
+  }
+
+  await db.trainingCheckpoint.update({
+    where: { id },
+    data: {
+      name,
+      address: text(formData, 'address', 300) || name,
+      deliveryType: text(formData, 'deliveryType', 80) || null,
+      quantity,
+      notes: text(formData, 'notes', MAX_NOTE) || null,
+      nextVisitNote: text(formData, 'nextVisitNote', MAX_NOTE) || null,
+    },
+  });
+
+  revalidatePath(`/record/${session.id}`);
+  return { success: `Updated “${name}”.` };
+}
+
+/**
+ * Replaces the round's list of house names mid-round.
+ *
+ * The list is normally pasted before setting off, but an agent who forgot, or
+ * who was handed extra names on the way, should not have to restart the round
+ * to use the dropdown.
+ */
+export async function updateNameOptionsAction(
+  _prev: RecState,
+  formData: FormData,
+): Promise<RecState> {
+  const user = await requireUser();
+  const sessionId = String(formData.get('sessionId') ?? '');
+
+  const session = await db.trainingSession.findUnique({
+    where: { id: sessionId },
+    select: { id: true, recordedById: true, traineeId: true, status: true },
+  });
+  if (!session) return { error: 'That recording session no longer exists.' };
+  if (session.status !== 'RECORDING') return { error: 'This round is already finished.' };
+  if (
+    session.recordedById !== user.id &&
+    session.traineeId !== user.id &&
+    user.role !== 'ADMIN'
+  ) {
+    return { error: 'This is not your recording session.' };
+  }
+
+  const names = parseNameOptions(String(formData.get('nameOptions') ?? ''));
+  const types = parseNameOptions(String(formData.get('typeOptions') ?? ''));
+
+  await db.trainingSession.update({
+    where: { id: sessionId },
+    data: {
+      nameOptions: names.length > 0 ? names.join('\n') : null,
+      typeOptions: types.length > 0 ? types.join('\n') : null,
+    },
+  });
+
+  revalidatePath(`/record/${sessionId}`);
+  const parts = [
+    names.length > 0 ? `${names.length} name${names.length === 1 ? '' : 's'}` : null,
+    types.length > 0 ? `${types.length} package type${types.length === 1 ? '' : 's'}` : null,
+  ].filter(Boolean);
+
+  return {
+    success:
+      parts.length > 0
+        ? `Saved for this round: ${parts.join(' and ')}.`
+        : 'Lists cleared for this round.',
+  };
 }
 
 export async function deleteCheckpointAction(formData: FormData) {

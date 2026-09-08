@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useActionState } from 'react';
+import { useEffect, useRef, useState, useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 import {
   Check,
@@ -10,6 +10,7 @@ import {
   Loader2,
   Undo2,
   MapPin,
+  Backpack,
 } from 'lucide-react';
 import RunMap from '@/components/RunMap';
 import {
@@ -20,6 +21,7 @@ import {
   reportIssueAction,
   endRunAction,
   cancelRunAction,
+  clearNextVisitNoteAction,
 } from '@/lib/run-actions';
 import { SKIP_REASONS, ISSUE_CATEGORIES } from '@/lib/run-constants';
 
@@ -32,6 +34,7 @@ export type RunStop = {
   latitude: number;
   longitude: number;
   notes: string | null;
+  previousNote: string | null;
   floor: string | null;
   unit: string | null;
   entranceInstructions: string | null;
@@ -149,6 +152,21 @@ export default function RunConsole({
     return () => navigator.geolocation.clearWatch(watch);
   }, []);
 
+  /*
+   * Rendered after mount, never during SSR.
+   *
+   * `toLocaleTimeString()` formats in the *renderer's* timezone and locale, so
+   * calling it in the render body produced one string on the server and a
+   * different one on the device. React then failed to hydrate this whole
+   * subtree — the run console's live region and its buttons — with a minified
+   * error #418. Deriving it in an effect means the server emits nothing and
+   * the client fills it in, which is what `elapsed` below already does.
+   */
+  const [startedLabel, setStartedLabel] = useState<string | null>(null);
+  useEffect(() => {
+    setStartedLabel(new Date(startedAt).toLocaleTimeString());
+  }, [startedAt]);
+
   useEffect(() => {
     const started = new Date(startedAt).getTime();
     const tick = () => {
@@ -172,6 +190,58 @@ export default function RunConsole({
   const remaining = stops.filter((s) => !s.outcome && s.id !== current?.id);
   const completed = stops.filter((s) => s.outcome);
 
+  /*
+   * "What should still be in my bag" — shown briefly after each checkpoint.
+   *
+   * Summed from the stops that have no outcome yet, so it is derived from the
+   * same records the run is written against and cannot drift. A driver who has
+   * just handed over a parcel wants to confirm the rest of the load without
+   * counting it, and this is the moment they are already looking at the phone.
+   *
+   * `stopsRef` keeps the effect's dependency list to `done` alone: recomputing
+   * on every `stops` change would re-fire the note when nothing was delivered.
+   */
+  const stopsRef = useRef(stops);
+  stopsRef.current = stops;
+
+  const [bagNote, setBagNote] = useState<string | null>(null);
+  const lastDone = useRef<number | null>(null);
+
+  useEffect(() => {
+    const previous = lastDone.current;
+    lastDone.current = done;
+
+    // Skip the first render, and skip an undo — this is a confirmation of
+    // something just handed over, not a running commentary.
+    if (previous === null || done <= previous) return;
+
+    const byType = new Map<string, number>();
+    for (const stop of stopsRef.current) {
+      if (stop.outcome) continue;
+      for (const sub of stop.subscriptions) {
+        const type = sub.productType || 'package';
+        byType.set(type, (byType.get(type) ?? 0) + sub.quantity);
+      }
+    }
+
+    const parts = [...byType.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([type, qty]) => `${qty} ${type}${qty === 1 ? '' : 's'}`);
+
+    setBagNote(
+      parts.length === 0
+        ? 'Bag should now be empty — nothing left to deliver.'
+        : `Still in your bag: ${
+            parts.length === 1
+              ? parts[0]
+              : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
+          }.`,
+    );
+
+    const timer = setTimeout(() => setBagNote(null), 9000);
+    return () => clearTimeout(timer);
+  }, [done]);
+
   const distance = fix && current ? metresBetween(fix, current) : null;
   const tooFar = distance !== null && distance > geofenceMetres;
 
@@ -187,6 +257,25 @@ export default function RunConsole({
 
   return (
     <div className="space-y-4">
+      {/*
+        Fixed rather than in flow: appearing inline would push the next stop's
+        action buttons down the instant after a tap, which is exactly when a
+        thumb is heading for them. Sits above the safe-area inset so it clears
+        the iOS home bar.
+      */}
+      {bagNote && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 mx-auto max-w-md rounded-xl bg-surface-2/97 px-4 py-3 text-sm text-ink shadow-2xl ring-1 ring-inset ring-accent/40 backdrop-blur"
+        >
+          <span className="flex items-start gap-2.5">
+            <Backpack className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden />
+            <span className="min-w-0">{bagNote}</span>
+          </span>
+        </div>
+      )}
+
       <div className="grid grid-cols-3 gap-px overflow-hidden rounded-xl border border-line bg-line">
         <div className="bg-panel px-4 py-3">
           <p className="eyebrow text-ink-faint">Progress</p>
@@ -363,11 +452,44 @@ export default function RunConsole({
               </p>
             )}
 
+            {current.previousNote && (
+              <div className="relative rounded-lg bg-info-dim/60 px-4 py-3 text-sm text-ink ring-1 ring-inset ring-info/30 pr-10">
+                <span className="mb-0.5 block font-semibold">Note from previous visit:</span>
+                {current.previousNote}
+                <form action={clearNextVisitNoteAction} className="absolute right-2 top-2">
+                  {hiddenPosition}
+                  <input type="hidden" name="stopId" value={current.id} />
+                  <button
+                    type="submit"
+                    title="Delete this note"
+                    className="rounded p-1.5 text-info transition-colors hover:bg-info/10 hover:text-ink"
+                  >
+                    <span className="sr-only">Delete</span>
+                    <svg
+                      className="h-4 w-4"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </form>
+              </div>
+            )}
+
             {/* Primary action. */}
-            <form action={deliverAction} className="space-y-3">
+            <form action={deliverAction} className="space-y-3 rounded-lg bg-surface-2 p-4 ring-1 ring-inset ring-line">
               {hiddenPosition}
               <input type="hidden" name="stopId" value={current.id} />
               {tooFar && <input type="hidden" name="confirmDistance" value="yes" />}
+              
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-medium text-ink">Delivery note (optional)</span>
+                <textarea name="notes" rows={2} placeholder="e.g. fruit box not returned" className="field resize-y" />
+              </label>
+
               <ActionButton
                 label={tooFar ? 'Mark delivered anyway' : 'Mark delivered'}
                 pendingLabel="Recording…"
@@ -631,7 +753,8 @@ export default function RunConsole({
       </form>
 
       <p className="text-center text-xs text-ink-faint">
-        {routeName} · run started {new Date(startedAt).toLocaleTimeString()} ·{' '}
+        {routeName}
+        {startedLabel && <> · run started {startedLabel}</>} ·{' '}
         <a
           href={`/routes/${routeId}`}
           className="underline decoration-line-bright underline-offset-2 hover:text-ink"

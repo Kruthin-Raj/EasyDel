@@ -258,14 +258,56 @@ Code deploys automatically; the schema does not. After changing
 `schema.prisma`:
 
 ```bash
-pnpm --filter @delivery/database db:migrate --name what_changed   # local
-git add -A && git commit -m "migration: what_changed" && git push
-pnpm --filter @delivery/database db:deploy                        # apply to the live DB
+# 1. Write the migration. Introspects the live DB read-only, prints the SQL,
+#    and flags anything destructive. It does not apply anything.
+pnpm --filter @delivery/database db:migrate:new what_changed
+
+# 2. Read the printed SQL. Then apply it.
+pnpm --filter @delivery/database db:deploy
+
+# 3. Commit the migration alongside the code that needs it.
+git add packages/database/prisma/migrations apps/web/src
+git commit -m "migration: what_changed"
+git push
 ```
 
 Run `db:deploy` **before or immediately after** the deploy that needs it.
 Shipping code that expects a column which doesn't exist yet causes runtime
 errors on the live site.
+
+> **⚠️ Never run `db:migrate`, `db:push` or `db:reset` against this database,
+> and never pass the production URL to `--shadow-database-url`.**
+>
+> There is one `.env`, and it points at production. `prisma migrate dev` resets
+> the schema when it detects drift, `db push` drops columns to match the
+> datamodel, and Prisma **wipes whatever `--shadow-database-url` points at**
+> before replaying migrations into it.
+>
+> That last one deleted every row in this database on 8 Sept 2026 — all users,
+> routes, locations and training recordings. The schema survived, so nothing
+> appeared broken until someone tried to sign in.
+>
+> Those three scripts now refuse to run unless the target host is local. Use
+> `db:migrate:new` + `db:deploy`, which only introspect and only move forward.
+
+### Restoring, if it happens anyway
+
+Supabase Dashboard → Database → Backups. Point-in-Time Recovery (paid plans)
+restores to a chosen minute; otherwise use the most recent daily backup.
+Confirm which of these your plan actually retains **before** you need it.
+
+### Making the first administrator
+
+Self-signup creates a `DELIVERY_AGENT`, so the first admin cannot be made from
+the UI:
+
+```bash
+# Sign up at /signup and verify the emailed code first, then:
+pnpm --filter @delivery/database db:make-admin you@example.com
+```
+
+It refuses if the account doesn't exist, and records the promotion in the audit
+log. Sign out and back in for the new role to apply.
 
 ---
 

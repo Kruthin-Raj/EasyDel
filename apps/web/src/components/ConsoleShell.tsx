@@ -22,9 +22,12 @@ import Sidebar from './Sidebar';
  */
 export default function ConsoleShell({
   user,
+  allowedNav,
   children,
 }: {
   user: { email: string; firstName: string; lastName: string; role: string };
+  /** Nav destinations this user may open; the rest are not rendered. */
+  allowedNav: string[];
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -61,7 +64,7 @@ export default function ConsoleShell({
     <div className="flex h-dvh overflow-hidden">
       {/* Desktop: the static rail, exactly as before. */}
       <div className="hidden lg:flex">
-        <Sidebar user={user} />
+        <Sidebar user={user} allowedNav={allowedNav} />
       </div>
 
       {/* Mobile: the same nav as a drawer. Kept mounted so it can animate, and
@@ -84,7 +87,7 @@ export default function ConsoleShell({
             open ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
-          <Sidebar user={user} onNavigate={() => setOpen(false)} />
+          <Sidebar user={user} allowedNav={allowedNav} onNavigate={() => setOpen(false)} />
         </div>
       </div>
 

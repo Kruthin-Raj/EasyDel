@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
+import { routeWhere } from '@/lib/scope';
 import { reoptimizeRouteAction } from '@/lib/actions';
 import { PageHeader, Card, Table, Td, Badge, EmptyState, Button, when, duration, metres } from '@/components/ui';
 
@@ -9,12 +10,15 @@ export const dynamic = 'force-dynamic';
 export default async function RoutesPage() {
   const user = await requireUser();
 
-  const whereClause = user.role === 'DELIVERY_AGENT' 
-    ? { driver: { userId: user.id } } 
-    : {};
-
+  /*
+   * Routes an agent created themselves used to be missing from this list: the
+   * filter matched only `driver.userId`, so anything they built but were not
+   * formally assigned to was invisible. routeWhere covers created-by,
+   * assigned-to and unclaimed, which is also what the run page already allows
+   * an agent to start.
+   */
   const routes = await db.route.findMany({
-    where: whereClause,
+    where: await routeWhere(user),
     include: {
       createdBy: true,
       driver: { include: { user: true } },

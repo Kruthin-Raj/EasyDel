@@ -1,5 +1,6 @@
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
+import { seesAllData } from '@/lib/scope';
 import LiveMap, { type MapMarker } from '@/components/Map';
 import { PageHeader, Card, Badge, EmptyState, Notice, when, metres } from '@/components/ui';
 
@@ -8,13 +9,22 @@ export const dynamic = 'force-dynamic';
 const ACTIVE_WINDOW_MIN = 15;
 
 export default async function LivePage() {
-  await requireUser();
+  const user = await requireUser();
 
   const since = new Date(Date.now() - ACTIVE_WINDOW_MIN * 60 * 1000);
 
-  // Latest GPS point per driver within the active window.
+  /*
+   * Latest GPS point per driver within the active window.
+   *
+   * Unscoped this showed every driver's live position to every driver. Only
+   * roles that supervise the operation see the whole fleet; an agent sees
+   * their own trace, which is all they need to confirm tracking is working.
+   */
   const recent = await db.gPSPoint.findMany({
-    where: { timestamp: { gte: since } },
+    where: {
+      timestamp: { gte: since },
+      ...(seesAllData(user) ? {} : { userId: user.id }),
+    },
     orderBy: { timestamp: 'desc' },
   });
 

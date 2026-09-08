@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 
 /*
  * Shared presentational primitives for the operations console.
@@ -26,7 +26,7 @@ export function PageHeader({
     <header className="flex flex-wrap items-end justify-between gap-4 border-b border-line pb-5">
       <div className="min-w-0">
         {eyebrow && <p className="eyebrow mb-2 text-accent">{eyebrow}</p>}
-        <h1 className="text-2xl font-semibold text-ink">{title}</h1>
+        <h1 className="text-xl font-semibold text-ink sm:text-2xl">{title}</h1>
         {subtitle && <p className="mt-1.5 max-w-2xl text-sm text-ink-dim">{subtitle}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -151,9 +151,26 @@ export function Badge({ children }: { children: string }) {
 }
 
 export function Table({ head, children }: { head: string[]; children: ReactNode }) {
+  /*
+   * Below 640px each row becomes a card and every cell prints its own column
+   * heading (see `table.stacked-table` in globals.css) — a seven-column table
+   * is otherwise only readable by dragging it sideways.
+   *
+   * The headings travel to CSS as custom properties on the <table> rather than
+   * as an attribute on each cell. That keeps the markup identical at every
+   * width, works whatever shape a page's row children take, and meant no
+   * calling page had to change.
+   *
+   * JSON.stringify is what quotes the value: `content` needs a CSS string, and
+   * it escapes any quote inside a heading the same way CSS does.
+   */
+  const columnLabels = Object.fromEntries(
+    head.map((h, i) => [`--col-${i + 1}`, JSON.stringify(h ?? '')]),
+  ) as CSSProperties;
+
   return (
     <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-sm">
+      <table className="stacked-table w-full border-collapse text-sm" style={columnLabels}>
         <thead>
           <tr className="border-b border-line bg-panel-2 text-left">
             {head.map((h) => (
@@ -236,7 +253,8 @@ export function Button({
       name={name}
       value={value}
       title={title}
-      className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${BUTTON_VARIANTS[variant]} ${className}`}
+      // `btn` carries the 44px touch minimum on coarse pointers only.
+      className={`btn inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${BUTTON_VARIANTS[variant]} ${className}`}
     >
       {children}
     </button>

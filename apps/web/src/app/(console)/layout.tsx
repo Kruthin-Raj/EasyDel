@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { getSessionUser } from '@/lib/auth';
-import Sidebar from '@/components/Sidebar';
+import ConsoleShell from '@/components/ConsoleShell';
 
 /**
  * Console shell. Every page inside this group requires a verified session, so
@@ -14,12 +14,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   const user = await getSessionUser();
   if (!user) redirect('/login');
 
-  return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar user={user} />
-      <main className="flex-1 overflow-y-auto">
-        <div className="stagger mx-auto max-w-[100rem] space-y-6 p-6 lg:p-8">{children}</div>
-      </main>
-    </div>
-  );
+  // The responsive frame (static rail on desktop, drawer on mobile) lives in
+  // ConsoleShell, which needs client-side state.
+  return <ConsoleShell user={user}>{children}</ConsoleShell>;
 }

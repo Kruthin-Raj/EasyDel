@@ -23,15 +23,10 @@ export default async function RecordPage() {
     );
   }
 
-  const [active, mentors, past] = await Promise.all([
+  const [active, past] = await Promise.all([
     db.trainingSession.findFirst({
       where: { recordedById: user.id, status: 'RECORDING' },
       include: { _count: { select: { checkpoints: true } } },
-    }),
-    db.user.findMany({
-      where: { role: { in: ['MENTOR', 'ADMIN'] } },
-      select: { id: true, firstName: true, lastName: true, role: true },
-      orderBy: { firstName: 'asc' },
     }),
     db.trainingSession.findMany({
       where: {
@@ -78,7 +73,7 @@ export default async function RecordPage() {
         <div className="grid gap-6 lg:grid-cols-[minmax(0,26rem)_1fr]">
           <Card title="Start a new round">
             <div className="p-5">
-              <StartRecordingForm action={startRecordingAction} mentors={mentors} />
+              <StartRecordingForm action={startRecordingAction} />
             </div>
           </Card>
 

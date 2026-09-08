@@ -95,14 +95,45 @@ export const DEFAULT_CHECKPOINT_TYPES = [
   'Food package',
 ];
 
-export function parseCheckpointTypes(settings: Record<string, string>): string[] {
-  const raw = settings.checkpoint_type_options?.trim();
-  if (!raw) return DEFAULT_CHECKPOINT_TYPES;
+/**
+ * Settings key holding one agent's own package-type list.
+ *
+ * `Setting.key` is the primary key, so `checkpoint_type_options` is a single
+ * global row. An agent granted `edit_dropdown` was therefore overwriting the
+ * list for every other agent — one agent's dropdown showed up in everyone
+ * else's. Namespacing by user id keeps each agent's edits their own while
+ * `Setting` stays a plain key/value table.
+ */
+export function checkpointTypesKey(userId: string) {
+  return `checkpoint_type_options:${userId}`;
+}
 
-  const parsed = raw
+/**
+ * The package-type options to offer this user.
+ *
+ * Resolution order:
+ *   1. the user's own list, if they have customised it
+ *   2. the shared list an admin set for the team
+ *   3. the built-in defaults
+ *
+ * Passing no `userId` yields the shared list, which is what the admin-facing
+ * Settings page should show.
+ */
+export function parseCheckpointTypes(
+  settings: Record<string, string>,
+  userId?: string,
+): string[] {
+  const own = userId ? split(settings[checkpointTypesKey(userId)]) : [];
+  if (own.length > 0) return own;
+
+  const shared = split(settings.checkpoint_type_options);
+  return shared.length > 0 ? shared : DEFAULT_CHECKPOINT_TYPES;
+}
+
+/** Newline-separated list -> trimmed, non-empty entries. */
+function split(raw: string | undefined): string[] {
+  return (raw ?? '')
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean);
-
-  return parsed.length > 0 ? parsed : DEFAULT_CHECKPOINT_TYPES;
 }

@@ -1,14 +1,18 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
+import { trainingWhere } from '@/lib/scope';
 import { PageHeader, Card, Table, Td, EmptyState, Notice, when, duration, metres } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
 
 export default async function TrainingRoutesPage() {
-  await requireUser();
+  const user = await requireUser();
 
+  // An agent sees the rounds they recorded, were trained on, or mentored —
+  // not every recording anyone has ever made.
   const sessions = await db.trainingSession.findMany({
+    where: trainingWhere(user),
     include: {
       mentor: true,
       trainee: true,

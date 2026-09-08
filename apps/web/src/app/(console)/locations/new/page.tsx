@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { currentUserWith } from '@/lib/permissions';
 import Forbidden from '@/components/Forbidden';
-import { createLocationAction } from '@/lib/actions';
+import { createLocationAction, createLocationFromLinkAction } from '@/lib/actions';
 import ActionForm from '@/components/ActionForm';
 import { PageHeader, Card, Field, TextArea, Notice } from '@/components/ui';
 
@@ -11,7 +11,7 @@ export default async function NewLocationPage() {
   if (!can.edit_locations) {
     return (
       <Forbidden
-        title="You can’t add permanent locations"
+        title="You can't add permanent locations"
         reason="Creating a permanent delivery location is restricted. Locations you capture while recording a route are saved automatically, so you rarely need this."
         role={user.role}
         hint="An administrator can allow this under Settings → Delivery agent permissions."
@@ -35,14 +35,48 @@ export default async function NewLocationPage() {
       />
 
       <div className="max-w-2xl space-y-4">
-        <Notice tone="warning">
-          Coordinates must be entered manually for now. Address geocoding is not yet
-          implemented, so a location is never created from an unresolved address — see the
-          README TODO.
-        </Notice>
-
-        <Card>
+        {/* ---- Quick add from link ---- */}
+        <Card title="Quick add from map link">
           <div className="p-5">
+            <ActionForm
+              action={createLocationFromLinkAction}
+              submitLabel="Create from link"
+              pendingLabel="Creating…"
+            >
+              <Field label="Name" name="name" required placeholder="Green Residency" />
+              <TextArea
+                label="Map link or coordinates"
+                name="link"
+                rows={2}
+                placeholder="https://maps.app.goo.gl/… or 13.6288, 79.4192"
+              />
+              <Field label="Address" name="address" placeholder="Optional — auto-filled from coords if blank" />
+
+              <label className="flex items-start gap-2.5 rounded-lg bg-surface-2 p-3 ring-1 ring-inset ring-line">
+                <input
+                  type="checkbox"
+                  name="confirmDuplicate"
+                  value="yes"
+                  className="mt-0.5 check"
+                />
+                <span className="text-sm text-ink-dim">
+                  <span className="font-medium text-ink">Create anyway</span> — tick this only
+                  if a duplicate warning appeared and this really is a separate location within 60 m
+                  of an existing one.
+                </span>
+              </label>
+            </ActionForm>
+          </div>
+        </Card>
+
+        {/* ---- Full manual form ---- */}
+        <Card title="Manual entry with coordinates">
+          <div className="p-5">
+            <Notice tone="warning">
+              Coordinates must be entered manually for now. Address geocoding is not yet
+              implemented, so a location is never created from an unresolved address.
+            </Notice>
+
             <ActionForm
               action={createLocationAction}
               submitLabel="Create location"

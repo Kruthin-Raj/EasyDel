@@ -9,6 +9,7 @@ import {
   reoptimiseAction,
   deleteRouteAction,
   restoreRouteAction,
+  renameRouteAction,
 } from '@/lib/route-edit-actions';
 import RouteEditor from '@/components/RouteEditor';
 import Forbidden from '@/components/Forbidden';
@@ -17,7 +18,7 @@ import { PageHeader, Card, Badge, MetricStrip, metres, duration } from '@/compon
 export const dynamic = 'force-dynamic';
 
 export default async function EditRoutePage({ params }: { params: Promise<{ id: string }> }) {
-  const { user } = await currentUserWith(['create_routes']);
+  const { user, can } = await currentUserWith(['create_routes']);
   const { id } = await params;
 
   const route = await db.route.findUnique({
@@ -47,6 +48,7 @@ export default async function EditRoutePage({ params }: { params: Promise<{ id: 
   const driverProfile = await db.driverProfile.findUnique({ where: { userId: user.id } });
   const mayEdit =
     user.role === 'ADMIN' ||
+    can.create_routes ||
     route.createdById === user.id ||
     (route.driverId !== null && route.driverId === driverProfile?.id);
 
@@ -144,6 +146,7 @@ export default async function EditRoutePage({ params }: { params: Promise<{ id: 
         routeName={route.name}
         stops={(latest?.stops ?? []).map((s) => ({
           id: s.id,
+          locationId: s.deliveryLocationId,
           sequence: s.sequence,
           name: s.deliveryLocation.name,
           address: s.deliveryLocation.address,
@@ -157,6 +160,7 @@ export default async function EditRoutePage({ params }: { params: Promise<{ id: 
         removeStopAction={removeStopAction}
         reoptimiseAction={reoptimiseAction}
         deleteRouteAction={deleteRouteAction}
+        renameRouteAction={renameRouteAction}
         hasHistory={deliveryCount > 0 || runCount > 0}
         deliveryCount={deliveryCount}
         runCount={runCount}

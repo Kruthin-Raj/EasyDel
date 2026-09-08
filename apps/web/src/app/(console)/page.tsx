@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
+import { deliveryWhere, issueWhere, routeWhere, trainingWhere, seesAllData } from '@/lib/scope';
 import { PageHeader, StatCard, Card, Table, Td, Badge, EmptyState, when, metres } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
@@ -11,6 +12,21 @@ export default async function DashboardPage() {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
   const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000);
+
+  /*
+   * Every figure below was counted across the whole database, so an agent's
+   * dashboard showed the fleet's delivery totals, other agents' customers in
+   * "Recent deliveries", and everyone's actions in the audit trail.
+   *
+   * Supervisors keep the operation-wide view. For an agent each query is
+   * narrowed to their own work, and the tiles that only make sense fleet-wide
+   * (driver headcount, cross-team audit) are not rendered at all.
+   */
+  const supervisor = seesAllData(user);
+  const dScope = deliveryWhere(user);
+  const iScope = issueWhere(user);
+  const rScope = await routeWhere(user);
+  const tScope = trainingWhere(user);
 
   const [
     totalDrivers,
@@ -26,26 +42,35 @@ export default async function DashboardPage() {
     recentDeliveries,
     recentAudit,
   ] = await Promise.all([
-    db.driverProfile.count(),
-    db.driverProfile.count({ where: { active: true } }),
-    db.route.count({ where: { createdAt: { gte: startOfDay } } }),
-    db.delivery.count({ where: { status: 'DELIVERED' } }),
-    db.delivery.count({ where: { status: { in: ['PENDING', 'IN_PROGRESS'] } } }),
-    db.delivery.count({ where: { status: 'FAILED' } }),
-    db.delivery.count({ where: { status: 'SKIPPED' } }),
-    db.trainingSession.count(),
+    supervisor ? db.driverProfile.count() : Promise.resolve(0),
+    supervisor ? db.driverProfile.count({ where: { active: true } }) : Promise.resolve(0),
+    db.route.count({ where: { ...rScope, createdAt: { gte: startOfDay } } }),
+    db.delivery.count({ where: { ...dScope, status: 'DELIVERED' } }),
+    db.delivery.count({ where: { ...dScope, status: { in: ['PENDING', 'IN_PROGRESS'] } } }),
+    db.delivery.count({ where: { ...dScope, status: 'FAILED' } }),
+    db.delivery.count({ where: { ...dScope, status: 'SKIPPED' } }),
+    db.trainingSession.count({ where: tScope }),
     db.gPSPoint.findMany({
-      where: { timestamp: { gte: fifteenMinAgo } },
+      where: {
+        timestamp: { gte: fifteenMinAgo },
+        ...(supervisor ? {} : { userId: user.id }),
+      },
       select: { userId: true },
       distinct: ['userId'],
     }),
-    db.issue.count({ where: { status: 'OPEN' } }),
+    db.issue.count({ where: { ...iScope, status: 'OPEN' } }),
     db.delivery.findMany({
+      where: dScope,
       take: 8,
       orderBy: { updatedAt: 'desc' },
       include: { subscription: { include: { deliveryLocation: true } } },
     }),
-    db.auditLog.findMany({ take: 6, orderBy: { timestamp: 'desc' }, include: { user: true } }),
+    db.auditLog.findMany({
+      where: supervisor ? {} : { userId: user.id },
+      take: 6,
+      orderBy: { timestamp: 'desc' },
+      include: { user: true },
+    }),
   ]);
 
   return (
@@ -64,11 +89,19 @@ export default async function DashboardPage() {
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Total drivers" value={totalDrivers} />
-        <StatCard label="Active drivers" value={activeDrivers} tone="positive" />
-        <StatCard label="Routes today" value={routesToday} tone="info" />
+        {supervisor && (
+          <>
+            <StatCard label="Total drivers" value={totalDrivers} />
+            <StatCard label="Active drivers" value={activeDrivers} tone="positive" />
+          </>
+        )}
         <StatCard
-          label="Active GPS sessions"
+          label={supervisor ? 'Routes today' : 'My routes today'}
+          value={routesToday}
+          tone="info"
+        />
+        <StatCard
+          label={supervisor ? 'Active GPS sessions' : 'My GPS tracking'}
           value={activeGpsUsers.length}
           hint="Reported in the last 15 min"
           tone={activeGpsUsers.length > 0 ? 'positive' : 'neutral'}
@@ -86,7 +119,10 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card title="Recent deliveries" description="Most recently updated first.">
+        <Card
+          title={supervisor ? 'Recent deliveries' : 'Your recent deliveries'}
+          description="Most recently updated first."
+        >
           {recentDeliveries.length === 0 ? (
             <EmptyState message="No deliveries recorded yet." hint="Create a route and mark stops delivered." />
           ) : (
@@ -108,7 +144,14 @@ export default async function DashboardPage() {
           )}
         </Card>
 
-        <Card title="Audit trail" description="Recent changes to locations, routes and settings.">
+        <Card
+          title={supervisor ? 'Audit trail' : 'Your recent activity'}
+          description={
+            supervisor
+              ? 'Recent changes to locations, routes and settings.'
+              : 'Changes you have made to locations, routes and settings.'
+          }
+        >
           {recentAudit.length === 0 ? (
             <EmptyState message="No audit events yet." />
           ) : (
@@ -135,12 +178,14 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
-      <Card
-        title="Reports"
-        description="Distance and duration totals across all recorded route versions."
-      >
-        <RouteTotals />
-      </Card>
+      {supervisor && (
+        <Card
+          title="Reports"
+          description="Distance and duration totals across all recorded route versions."
+        >
+          <RouteTotals />
+        </Card>
+      )}
     </>
   );
 }

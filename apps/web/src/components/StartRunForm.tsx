@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
+import { useRouter } from 'next/navigation';
 import { Play, Loader2 } from 'lucide-react';
 
 type State = { error?: string; success?: string; info?: string } | null;
@@ -39,6 +40,7 @@ export default function StartRunForm({
   action: (prev: State, formData: FormData) => Promise<State>;
   routeId: string;
 }) {
+  const router = useRouter();
   const [state, formAction] = useActionState(action, null);
   const [fix, setFix] = useState<{ lat: number; lng: number } | null>(null);
 
@@ -51,11 +53,24 @@ export default function StartRunForm({
     );
   }, []);
 
+  // When the action succeeds, force a full page refresh so the server
+  // component picks up the new activeRun and renders RunConsole.
+  useEffect(() => {
+    if (state?.success) {
+      router.refresh();
+    }
+  }, [state?.success, router]);
+
   return (
     <form action={formAction} className="space-y-3">
       {state?.error && (
         <p role="alert" data-testid="form-error" className="rounded-lg bg-bad-dim/60 px-4 py-3 text-sm text-ink ring-1 ring-inset ring-bad/30">
           {state.error}
+        </p>
+      )}
+      {state?.success && (
+        <p role="status" className="rounded-lg bg-ok-dim/60 px-4 py-3 text-sm text-ink ring-1 ring-inset ring-ok/30">
+          {state.success}
         </p>
       )}
       <input type="hidden" name="routeId" value={routeId} />

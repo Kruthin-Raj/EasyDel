@@ -63,9 +63,16 @@ const GROUPS: { label: string; items: { name: string; href: string; icon: typeof
 
 export default function Sidebar({
   user,
+  allowedNav,
   onNavigate,
 }: {
   user: { email: string; firstName: string; lastName: string; role: string };
+  /**
+   * Destinations this user may open, resolved on the server by `allowedNavHrefs`.
+   * Anything absent is not rendered — an agent used to see "Drivers", tap it,
+   * and hit a page that refused them.
+   */
+  allowedNav: string[];
   /**
    * Called when the operator picks a destination. Set by the mobile drawer so
    * it closes itself; undefined for the static desktop rail, which never needs
@@ -75,12 +82,20 @@ export default function Sidebar({
 }) {
   const pathname = usePathname();
 
+  // Drop forbidden items, then drop any group left with nothing in it.
+  const allowed = new Set(allowedNav);
+  const groups = GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => allowed.has(item.href)),
+  })).filter((group) => group.items.length > 0);
+
   /*
    * Only the most specific match highlights. A plain startsWith would light up
    * both "Routes" and "Route from links" on /routes/from-links, so the longest
    * matching href wins.
    */
-  const activeHref = GROUPS.flatMap((g) => g.items)
+  const activeHref = groups
+    .flatMap((g) => g.items)
     .map((item) => item.href)
     .filter((href) => (href === '/' ? pathname === '/' : pathname.startsWith(href)))
     .sort((a, b) => b.length - a.length)[0];
@@ -97,7 +112,7 @@ export default function Sidebar({
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 pb-4">
-        {GROUPS.map((group) => (
+        {groups.map((group) => (
           <div key={group.label} className="mb-5">
             <p className="eyebrow px-3 pb-2 text-ink-faint">{group.label}</p>
             <ul className="space-y-0.5">

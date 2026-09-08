@@ -4,8 +4,9 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { db } from './db';
 import { requireAdmin, requireUser } from './auth';
-import { requireCapability, can } from './permissions';
+import { requireCapability, can, currentUserWith, checkpointTypesKey } from './permissions';
 import { optimizeRoute, refineWithOsrm, isValidCoord, haversine, type Point } from './optimize';
+import { parseMapLink, resolveShortLink } from './map-links';
 import { SETTING_DEFAULTS } from './settings';
 import type { ParsedRow } from './import-parse';
 
@@ -44,7 +45,7 @@ export async function createLocationAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const user = await requireAdmin();
+  const user = await requireCapability('edit_locations');
 
   const name = String(formData.get('name') ?? '').trim();
   const address = String(formData.get('address') ?? '').trim();
@@ -93,6 +94,114 @@ export async function createLocationAction(
   revalidatePath('/locations');
   revalidatePath('/');
   redirect('/locations');
+}
+
+/** Creates a location from a pasted map link. Only name is required; coords come from the link. */
+export async function createLocationFromLinkAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const user = await requireCapability('edit_locations');
+
+  const link = String(formData.get('link') ?? '').trim();
+  const name = String(formData.get('name') ?? '').trim();
+
+  if (!name) return { error: 'Name is required.' };
+  if (!link) return { error: 'Paste a map link or coordinates.' };
+
+  let parsed = parseMapLink(link);
+  if (parsed.needsResolution) parsed = await resolveShortLink(link);
+
+  if (parsed.latitude === null || parsed.longitude === null) {
+    return { error: parsed.error ?? 'Could not read coordinates from that link.' };
+  }
+
+  const lat = parsed.latitude;
+  const lng = parsed.longitude;
+
+  // Duplicate detection
+  const nearby = await db.deliveryLocation.findMany({
+    where: { status: { in: ['ACTIVE', 'PAUSED'] } },
+    select: { id: true, name: true, latitude: true, longitude: true },
+  });
+  const dup = nearby.find((l) => haversine({ lat, lng }, { lat: l.latitude, lng: l.longitude }) < 60);
+  if (dup && formData.get('confirmDuplicate') !== 'yes') {
+    const d = Math.round(haversine({ lat, lng }, { lat: dup.latitude, lng: dup.longitude }));
+    return {
+      error: `Possible duplicate: "${dup.name}" is ${d} m away. Re-submit with "Create anyway" ticked if this is genuinely a separate location.`,
+    };
+  }
+
+  const created = await db.deliveryLocation.create({
+    data: {
+      name,
+      buildingName: String(formData.get('buildingName') ?? '') || null,
+      address: String(formData.get('address') ?? '').trim() || `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+      latitude: lat,
+      longitude: lng,
+      floor: String(formData.get('floor') ?? '') || null,
+      unit: String(formData.get('unit') ?? '') || null,
+      notes: String(formData.get('notes') ?? '') || null,
+      entranceInstructions: String(formData.get('entranceInstructions') ?? '') || null,
+      securityInstructions: String(formData.get('securityInstructions') ?? '') || null,
+    },
+  });
+
+  await audit(user.id, 'LOCATION_CREATED', 'DeliveryLocation', created.id, { newValue: name });
+  revalidatePath('/locations');
+  revalidatePath('/');
+  return { success: `Created "${name}" at ${lat.toFixed(5)}, ${lng.toFixed(5)}. You can close this tab.` };
+}
+
+export async function updateLocationAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const { user, can: permissions } = await currentUserWith(['edit_locations']);
+  if (!permissions.edit_locations) {
+    return { error: 'You do not have permission to edit locations.' };
+  }
+
+  const id = String(formData.get('id') ?? '');
+  const name = String(formData.get('name') ?? '').trim();
+  const address = String(formData.get('address') ?? '').trim();
+  const lat = Number(formData.get('latitude'));
+  const lng = Number(formData.get('longitude'));
+
+  if (!id) return { error: 'Location ID is missing.' };
+  if (!name) return { error: 'Name is required.' };
+  if (!address) return { error: 'Address is required.' };
+  if (!isValidCoord(lat, lng)) {
+    return {
+      error: 'Latitude and longitude must be valid numbers (lat −90..90, lng −180..180).',
+    };
+  }
+
+  const existing = await db.deliveryLocation.findUnique({ where: { id } });
+  if (!existing) return { error: 'Location not found.' };
+
+  const updated = await db.deliveryLocation.update({
+    where: { id },
+    data: {
+      name,
+      buildingName: String(formData.get('buildingName') ?? '') || null,
+      address,
+      latitude: lat,
+      longitude: lng,
+      floor: String(formData.get('floor') ?? '') || null,
+      unit: String(formData.get('unit') ?? '') || null,
+      notes: String(formData.get('notes') ?? '') || null,
+      entranceInstructions: String(formData.get('entranceInstructions') ?? '') || null,
+      securityInstructions: String(formData.get('securityInstructions') ?? '') || null,
+    },
+  });
+
+  await audit(user.id, 'LOCATION_UPDATED', 'DeliveryLocation', id, { oldValue: existing.name, newValue: name });
+  revalidatePath('/locations');
+  revalidatePath('/');
+  
+  // Also close the tab since this is usually opened in a new tab for inline editing
+  return { success: 'Location updated! You can safely close this tab.' };
 }
 
 export async function setLocationStatusAction(formData: FormData) {
@@ -297,7 +406,7 @@ export async function createRouteAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const user = await requireAdmin();
+  const user = await requireCapability('create_routes');
 
   const name = String(formData.get('name') ?? '').trim();
   if (!name) return { error: 'Route name is required.' };
@@ -551,16 +660,38 @@ export async function saveSettingsAction(
     } else {
       value = raw === 'on' ? 'true' : 'false';
     }
+
+    /*
+     * An agent's package-type list is written to their own namespaced key.
+     *
+     * `checkpoint_type_options` is one global row, so an agent saving here used
+     * to replace the list for every other agent — the dropdown one agent
+     * edited appeared in everybody's. Admins still write the shared row, which
+     * remains the default for anyone who has not customised theirs.
+     */
+    const targetKey =
+      key === 'checkpoint_type_options' && !isAdmin ? checkpointTypesKey(user.id) : key;
+
     await db.setting.upsert({
-      where: { key },
+      where: { key: targetKey },
       update: { value },
-      create: { key, value },
+      create: { key: targetKey, value },
     });
   }
 
-  await audit(user.id, 'SETTINGS_UPDATED', 'Setting', 'global');
+  await audit(
+    user.id,
+    'SETTINGS_UPDATED',
+    'Setting',
+    isAdmin ? 'global' : checkpointTypesKey(user.id),
+  );
   revalidatePath('/settings');
-  return { success: 'Settings saved.' };
+  revalidatePath('/record');
+  return {
+    success: isAdmin
+      ? 'Settings saved.'
+      : 'Saved. Your package types are yours alone — other agents keep theirs.',
+  };
 }
 
 // ----------------------------------------------------------- issues ---------

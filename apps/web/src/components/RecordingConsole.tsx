@@ -4,12 +4,14 @@ import { useEffect, useRef, useState, useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { MapPin, Camera, Check, Trash2, Loader2, Satellite } from 'lucide-react';
 import RecordMap from '@/components/RecordMap';
+import CheckpointEditor from '@/components/CheckpointEditor';
 import {
   addCheckpointAction,
   appendTrackAction,
   toggleCheckpointCompleteAction,
   deleteCheckpointAction,
   endRecordingAction,
+  updateNameOptionsAction,
 } from '@/lib/recording-actions';
 
 type Checkpoint = {
@@ -54,12 +56,18 @@ function SaveButton({ label }: { label: string }) {
  */
 export default function RecordingConsole({
   sessionId,
+  nameOptions,
   routeName,
   checkpoints,
   deliveryTypes,
   startedAt,
 }: {
   sessionId: string;
+  /**
+   * Names pasted before the round started. Offered as a dropdown on the name
+   * field so a long name can be picked instead of typed at the gate.
+   */
+  nameOptions: string[];
   routeName: string;
   checkpoints: Checkpoint[];
   deliveryTypes: string[];
@@ -73,6 +81,7 @@ export default function RecordingConsole({
 
   const [addState, addAction] = useActionState(addCheckpointAction, null);
   const [endState, endAction] = useActionState(endRecordingAction, null);
+  const [namesState, namesAction] = useActionState(updateNameOptionsAction, null);
 
   // --- live position -------------------------------------------------------
   useEffect(() => {
@@ -249,7 +258,39 @@ export default function RecordingConsole({
               <span className="mb-1.5 block text-sm font-medium text-ink">
                 House / building <span className="text-accent">*</span>
               </span>
-              <input name="name" required autoFocus placeholder="e.g. 24 Green Street" className="field" />
+              {/*
+                A native combobox: `list` attaches the pasted names as
+                suggestions while the input still accepts anything typed.
+                Deliberately not a <select> plus a separate "other" box — at a
+                gate, one field that does both is fewer taps, and the browser
+                filters the list as you type for free.
+              */}
+              <input
+                name="name"
+                required
+                autoFocus
+                list={nameOptions.length > 0 ? 'round-house-names' : undefined}
+                autoComplete="off"
+                placeholder={
+                  nameOptions.length > 0
+                    ? 'Pick a name or type a new one'
+                    : 'e.g. 24 Green Street'
+                }
+                className="field"
+              />
+              {nameOptions.length > 0 && (
+                <>
+                  <datalist id="round-house-names">
+                    {nameOptions.map((n) => (
+                      <option key={n} value={n} />
+                    ))}
+                  </datalist>
+                  <span className="mt-1.5 block text-xs text-ink-dim">
+                    {nameOptions.length} name{nameOptions.length === 1 ? '' : 's'} from your list —
+                    start typing to filter, or type something new.
+                  </span>
+                </>
+              )}
             </label>
 
             <label className="block">
@@ -337,6 +378,86 @@ export default function RecordingConsole({
         </div>
       )}
 
+      {/* --- this round's pick-lists ---
+          Normally pasted before setting off, but an agent who forgot, or who
+          was handed extra names on the way, should not have to restart.
+          Both lists belong to this round alone. */}
+      <details className="rounded-xl border border-line bg-panel">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-4 py-3">
+          <span className="text-sm font-semibold text-ink">
+            Pick-lists for this round
+            {(nameOptions.length > 0 || deliveryTypes.length > 0) && (
+              <span className="ml-1.5 font-normal text-ink-dim">
+                ({nameOptions.length} name{nameOptions.length === 1 ? '' : 's'},{' '}
+                {deliveryTypes.length} type{deliveryTypes.length === 1 ? '' : 's'})
+              </span>
+            )}
+          </span>
+          <span className="text-xs text-ink-faint">Edit</span>
+        </summary>
+
+        <form action={namesAction} className="space-y-3 border-t border-line px-4 py-3">
+          <input type="hidden" name="sessionId" value={sessionId} />
+
+          {namesState?.error && (
+            <p
+              role="alert"
+              className="rounded-lg bg-bad-dim/60 px-3 py-2 text-xs text-ink ring-1 ring-inset ring-bad/30"
+            >
+              {namesState.error}
+            </p>
+          )}
+          {namesState?.success && (
+            <p
+              role="status"
+              className="rounded-lg bg-ok-dim/50 px-3 py-2 text-xs text-ink ring-1 ring-inset ring-ok/25"
+            >
+              {namesState.success}
+            </p>
+          )}
+
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-ink">
+              House names — one per line
+            </span>
+            <textarea
+              name="nameOptions"
+              rows={5}
+              defaultValue={nameOptions.join('\n')}
+              placeholder={'Mr Sharma — 12 Green Street\nAvengers Tower flat 3B'}
+              className="field resize-y"
+            />
+            <span className="mt-1 block text-xs text-ink-dim">
+              These fill the dropdown on the checkpoint name field.
+            </span>
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-ink">
+              Package types — one per line
+            </span>
+            <textarea
+              name="typeOptions"
+              rows={4}
+              defaultValue={deliveryTypes.join('\n')}
+              placeholder={'Big box\nSmall box\nFruit crate'}
+              className="field resize-y"
+            />
+            <span className="mt-1 block text-xs text-ink-dim">
+              What you are carrying on this round. Yours alone — editing it does not change any
+              other agent&rsquo;s dropdown.
+            </span>
+          </label>
+
+          <p className="text-xs text-ink-faint">
+            Saving replaces both lists for this round. Leave a box empty to fall back to your usual
+            list.
+          </p>
+
+          <SaveButton label="Save pick-lists" />
+        </form>
+      </details>
+
       {/* --- houses logged so far --- */}
       <div className="rounded-xl border border-line bg-panel">
         <header className="border-b border-line px-4 py-3">
@@ -380,6 +501,20 @@ export default function RecordingConsole({
                   {c.nextVisitNote && (
                     <p className="mt-1 text-xs text-warn">Next visit: {c.nextVisitNote}</p>
                   )}
+
+                  <CheckpointEditor
+                    checkpoint={{
+                      id: c.id,
+                      name: c.name,
+                      address: c.address,
+                      deliveryType: c.deliveryType,
+                      quantity: c.quantity,
+                      notes: c.notes,
+                      nextVisitNote: c.nextVisitNote,
+                    }}
+                    deliveryTypes={deliveryTypes}
+                    nameOptions={nameOptions}
+                  />
                 </div>
 
                 <div className="flex shrink-0 items-center gap-1">

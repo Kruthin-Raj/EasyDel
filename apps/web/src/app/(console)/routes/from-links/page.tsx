@@ -84,7 +84,7 @@ export default async function RouteFromLinksPage() {
           parseAction={parseLinksAction}
           createAction={createRouteFromLinksAction}
           appendAction={addLinksToRouteAction}
-          deliveryTypes={parseCheckpointTypes(settings)}
+          deliveryTypes={parseCheckpointTypes(settings, user.id)}
           existingRoutes={existingRoutes}
         />
       </div>

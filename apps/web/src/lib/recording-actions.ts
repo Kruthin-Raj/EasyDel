@@ -164,7 +164,9 @@ export async function addCheckpointAction(
   let photoUrl: string | null = null;
   const photo = formData.get('photo');
   if (photo instanceof File && photo.size > 0) {
-    await ensureBucket();
+    const bucketSetup = await ensureBucket();
+    if (!bucketSetup.ok) return { error: `Storage error: ${bucketSetup.detail}` };
+    
     const upload = await uploadPhoto(photo, `training/${sessionId}`);
     if (!upload.ok) return { error: upload.error };
     photoUrl = upload.path;

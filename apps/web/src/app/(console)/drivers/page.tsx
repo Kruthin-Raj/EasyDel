@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { createUserAction, toggleDriverActiveAction } from '@/lib/actions';
-import ActionForm from '@/components/ActionForm';
+import DriverForm from './DriverForm';
 import { PageHeader, Card, Table, Td, Badge, EmptyState, Button, Field, when } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
@@ -76,13 +76,7 @@ export default async function DriversPage() {
 
         <Card title="Add a driver" description="Creates the user and their driver profile.">
           <div className="p-5">
-            <ActionForm action={createUserAction} submitLabel="Create driver" pendingLabel="Creating…">
-              <input type="hidden" name="role" value="DELIVERY_AGENT" />
-              <Field label="First name" name="firstName" required />
-              <Field label="Last name" name="lastName" required />
-              <Field label="Email" name="email" type="email" required />
-              <Field label="Vehicle type" name="vehicleType" placeholder="Motorcycle" />
-            </ActionForm>
+            <DriverForm />
           </div>
         </Card>
       </div>

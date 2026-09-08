@@ -370,8 +370,12 @@ export default function RecordingConsole({
                     {[c.deliveryType, c.quantity != null ? `×${c.quantity}` : null]
                       .filter(Boolean)
                       .join(' ') || 'No package type'}
-                    {c.photoUrl ? ' · photo' : ''}
                   </p>
+                  {c.photoUrl && (
+                    <div className="mt-2">
+                      <img src={c.photoUrl} alt="House photo" className="h-16 w-auto rounded-md object-cover ring-1 ring-line" />
+                    </div>
+                  )}
                   {c.notes && <p className="mt-1 text-xs text-ink-dim">{c.notes}</p>}
                   {c.nextVisitNote && (
                     <p className="mt-1 text-xs text-warn">Next visit: {c.nextVisitNote}</p>

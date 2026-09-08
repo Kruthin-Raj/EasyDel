@@ -170,9 +170,9 @@ export async function moveLocationAction(
 // ----------------------------------------------------------- people ---------
 
 export async function createUserAction(
-  _prev: ActionState,
+  _prev: any,
   formData: FormData,
-): Promise<ActionState> {
+): Promise<ActionState & { state?: 'OTP_REQUIRED'; email?: string; formData?: any }> {
   const admin = await requireAdmin();
 
   const email = String(formData.get('email') ?? '').trim().toLowerCase();
@@ -185,8 +185,29 @@ export async function createUserAction(
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { error: 'That email address is not valid.' };
   if (!['ADMIN', 'MENTOR', 'DELIVERY_AGENT'].includes(role)) return { error: 'Pick a valid role.' };
 
-  const existing = await db.user.findUnique({ where: { email } });
-  if (existing) return { error: `A user with ${email} already exists.` };
+  const existing = await db.user.findUnique({ where: { email }, include: { driverProfile: true, mentorProfile: true } });
+  
+  if (existing) {
+    if (role === 'DELIVERY_AGENT' && existing.driverProfile) return { error: `User is already a delivery agent.` };
+    if (role === 'MENTOR' && existing.mentorProfile) return { error: `User is already a mentor.` };
+
+    // Trigger OTP flow for converting existing user to a new role
+    const { issueVerificationCode } = await import('./tokens');
+    const { sendMail, verificationEmail } = await import('./mailer');
+    
+    const code = await issueVerificationCode(email);
+    await sendMail({
+      to: email,
+      ...verificationEmail(code),
+    });
+
+    return { 
+      state: 'OTP_REQUIRED', 
+      email,
+      success: `An OTP has been sent to ${email}. Ask the driver for it to verify.`,
+      formData: { email, firstName, lastName, role, vehicleType }
+    };
+  }
 
   const user = await db.user.create({
     data: { email, firstName, lastName, role: role as never },
@@ -203,6 +224,51 @@ export async function createUserAction(
   revalidatePath('/mentors');
   revalidatePath('/');
   return { success: `Created ${firstName} ${lastName}.` };
+}
+
+export async function verifyDriverAddAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const admin = await requireAdmin();
+  
+  const email = String(formData.get('email') ?? '').trim().toLowerCase();
+  const otp = String(formData.get('otp') ?? '').trim();
+  const role = String(formData.get('role') ?? '');
+  const vehicleType = String(formData.get('vehicleType') ?? '') || null;
+
+  if (!email || !otp) return { error: 'Email and OTP are required.' };
+
+  const { verifyCode } = await import('./tokens');
+  const outcome = await verifyCode(email, otp);
+  
+  if (!outcome.ok) {
+    if (outcome.reason === 'expired') return { error: 'That code has expired. Request a new one.' };
+    if (outcome.reason === 'too-many-attempts') return { error: 'Too many incorrect attempts. Request a new code.' };
+    if (outcome.reason === 'incorrect') return { error: 'Incorrect code.' };
+    return { error: 'Code not found or already used.' };
+  }
+
+  const user = await db.user.findUnique({ where: { email } });
+  if (!user) return { error: 'User not found.' };
+
+  if (role === 'DELIVERY_AGENT') {
+    await db.driverProfile.create({ data: { userId: user.id, vehicleType } });
+  } else if (role === 'MENTOR') {
+    await db.mentorProfile.create({ data: { userId: user.id } });
+  }
+
+  // Update role to include the new capability if it wasn't already ADMIN
+  if (user.role !== 'ADMIN') {
+    await db.user.update({ where: { id: user.id }, data: { role: role as never } });
+  }
+
+  await audit(admin.id, 'USER_ROLE_ADDED', 'User', user.id, { newValue: `${email} (${role}) via OTP` });
+  
+  revalidatePath('/drivers');
+  revalidatePath('/mentors');
+  revalidatePath('/');
+  return { success: `Successfully assigned ${role} to ${user.firstName}.` };
 }
 
 export async function toggleDriverActiveAction(formData: FormData) {
@@ -469,8 +535,14 @@ export async function saveSettingsAction(
 
   for (const key of Object.keys(SETTING_DEFAULTS)) {
     const raw = formData.get(key);
-    const value =
-      key === 'delivery_geofence_metres' ? String(geofence) : raw === 'on' ? 'true' : 'false';
+    let value = '';
+    if (key === 'delivery_geofence_metres') {
+      value = String(geofence);
+    } else if (key === 'checkpoint_type_options') {
+      value = String(raw ?? '');
+    } else {
+      value = raw === 'on' ? 'true' : 'false';
+    }
     await db.setting.upsert({
       where: { key },
       update: { value },

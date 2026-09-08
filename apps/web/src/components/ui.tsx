@@ -238,6 +238,7 @@ export function Button({
   value,
   className = '',
   title,
+  ...props
 }: {
   children: ReactNode;
   variant?: keyof typeof BUTTON_VARIANTS;
@@ -246,13 +247,14 @@ export function Button({
   value?: string;
   className?: string;
   title?: string;
-}) {
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       type={type}
       name={name}
       value={value}
       title={title}
+      {...props}
       // `btn` carries the 44px touch minimum on coarse pointers only.
       className={`btn inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${BUTTON_VARIANTS[variant]} ${className}`}
     >

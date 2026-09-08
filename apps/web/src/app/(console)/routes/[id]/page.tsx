@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { reoptimizeRouteAction, assignDriverAction } from '@/lib/actions';
 import LiveMap, { type MapMarker } from '@/components/Map';
+import { signedPhotoUrl } from '@/lib/storage';
 import { PageHeader, Card, Table, Td, Badge, EmptyState, Button, when, duration, metres } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
@@ -85,6 +86,16 @@ export default async function RouteDetailPage({
   }
 
   const staleStops = latest?.stops.filter((s) => s.deliveryLocation.status !== 'ACTIVE') ?? [];
+
+  const stopsWithPhotos = latest ? await Promise.all(
+    latest.stops.map(async (s) => {
+      let url = null;
+      if (s.deliveryLocation.photo) {
+        url = await signedPhotoUrl(s.deliveryLocation.photo);
+      }
+      return { ...s, resolvedPhotoUrl: url };
+    })
+  ) : [];
 
   return (
     <>
@@ -174,7 +185,7 @@ export default async function RouteDetailPage({
               <EmptyState message="This version has no stops." />
             ) : (
               <Table head={['#', 'Location', 'Deliveries', 'Leg distance', 'Status']}>
-                {latest.stops.map((s) => {
+                {stopsWithPhotos.map((s) => {
                   const active = s.deliveryLocation.subscriptions.filter(
                     (x) => x.status === 'ACTIVE',
                   );
@@ -189,6 +200,11 @@ export default async function RouteDetailPage({
                           <p className="mt-0.5 text-xs text-ink-dim">
                             {s.deliveryLocation.notes}
                           </p>
+                        )}
+                        {s.resolvedPhotoUrl && (
+                          <div className="mt-2">
+                            <img src={s.resolvedPhotoUrl} alt="House photo" className="h-20 w-auto rounded-md object-cover ring-1 ring-line" />
+                          </div>
                         )}
                       </Td>
                       <Td className="text-ink">

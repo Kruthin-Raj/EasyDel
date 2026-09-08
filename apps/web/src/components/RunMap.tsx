@@ -87,7 +87,7 @@ export default function RunMap({
    * Heading-up is easier to follow while driving; north-up is easier for
    * getting your bearings, so the driver picks.
    */
-  const [orientation, setOrientation] = useState<'north' | 'heading'>('north');
+  const [orientation, setOrientation] = useState<'north' | 'heading'>('heading');
 
   // Smoothed heading, from GPS when the browser gives one and from successive
   // positions when it does not.

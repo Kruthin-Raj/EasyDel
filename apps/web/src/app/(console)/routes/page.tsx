@@ -7,9 +7,14 @@ import { PageHeader, Card, Table, Td, Badge, EmptyState, Button, when, duration,
 export const dynamic = 'force-dynamic';
 
 export default async function RoutesPage() {
-  await requireUser();
+  const user = await requireUser();
+
+  const whereClause = user.role === 'DELIVERY_AGENT' 
+    ? { driver: { userId: user.id } } 
+    : {};
 
   const routes = await db.route.findMany({
+    where: whereClause,
     include: {
       createdBy: true,
       driver: { include: { user: true } },

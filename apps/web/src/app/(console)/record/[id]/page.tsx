@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { loadSettings, parseCheckpointTypes } from '@/lib/permissions';
 import { abandonRecordingAction } from '@/lib/recording-actions';
+import { signedPhotoUrl } from '@/lib/storage';
 import RecordingConsole from '@/components/RecordingConsole';
 import Forbidden from '@/components/Forbidden';
 import { PageHeader } from '@/components/ui';
@@ -41,6 +42,13 @@ export default async function RecordingPage({ params }: { params: Promise<{ id: 
   const settings = await loadSettings();
   const deliveryTypes = parseCheckpointTypes(settings);
 
+  const checkpointsWithPhotos = await Promise.all(
+    session.checkpoints.map(async (c) => {
+      const url = c.photoUrl ? await signedPhotoUrl(c.photoUrl) : null;
+      return { ...c, resolvedPhotoUrl: url };
+    })
+  );
+
   return (
     <>
       <PageHeader
@@ -67,7 +75,7 @@ export default async function RecordingPage({ params }: { params: Promise<{ id: 
           routeName={session.routeName}
           startedAt={session.startedAt.toISOString()}
           deliveryTypes={deliveryTypes}
-          checkpoints={session.checkpoints.map((c) => ({
+          checkpoints={checkpointsWithPhotos.map((c) => ({
             id: c.id,
             name: c.name,
             address: c.address,
@@ -77,7 +85,7 @@ export default async function RecordingPage({ params }: { params: Promise<{ id: 
             quantity: c.quantity,
             notes: c.notes,
             nextVisitNote: c.nextVisitNote,
-            photoUrl: c.photoUrl,
+            photoUrl: c.resolvedPhotoUrl,
             completedAt: c.completedAt,
             sequence: c.sequence,
           }))}

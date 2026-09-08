@@ -57,6 +57,33 @@ export default async function RecordingPage({ params }: { params: Promise<{ id: 
     fallback: parseCheckpointTypes(settings, user.id),
   });
 
+  /*
+   * The track recorded so far, handed back to the client.
+   *
+   * The map's trail was previously built only from positions seen since the
+   * page loaded, so backgrounding the tab and returning made the recorded path
+   * disappear — the geometry was safe in the database the entire time, it was
+   * just never sent back. Parsed defensively: a malformed column should cost
+   * the trail, not the whole recording screen.
+   */
+  let initialTrack: number[][] = [];
+  if (session.geometry) {
+    try {
+      const parsed = JSON.parse(session.geometry);
+      if (Array.isArray(parsed)) {
+        initialTrack = parsed.filter(
+          (point): point is number[] =>
+            Array.isArray(point) &&
+            point.length === 2 &&
+            Number.isFinite(point[0]) &&
+            Number.isFinite(point[1]),
+        );
+      }
+    } catch {
+      initialTrack = [];
+    }
+  }
+
   const checkpointsWithPhotos = await Promise.all(
     session.checkpoints.map(async (c) => {
       const url = c.photoUrl ? await signedPhotoUrl(c.photoUrl) : null;
@@ -91,6 +118,7 @@ export default async function RecordingPage({ params }: { params: Promise<{ id: 
           startedAt={session.startedAt.toISOString()}
           deliveryTypes={deliveryTypes}
           nameOptions={readNameOptions(session.nameOptions)}
+          initialTrack={initialTrack}
           checkpoints={checkpointsWithPhotos.map((c) => ({
             id: c.id,
             name: c.name,

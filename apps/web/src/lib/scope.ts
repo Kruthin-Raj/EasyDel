@@ -93,6 +93,15 @@ export function trainingWhere(user: SessionUser): Prisma.TrainingSessionWhereInp
  * The detail page needs a yes/no answer rather than a filter, and re-deriving
  * the rule there would be a second place for it to drift.
  */
+export async function canSeeRun(user: SessionUser, runId: string): Promise<boolean> {
+  if (seesAllData(user)) return true;
+  const hit = await db.routeRun.findFirst({
+    where: { id: runId, ...runWhere(user) },
+    select: { id: true },
+  });
+  return hit !== null;
+}
+
 export async function canSeeDelivery(user: SessionUser, deliveryId: string): Promise<boolean> {
   if (seesAllData(user)) return true;
   const hit = await db.delivery.findFirst({

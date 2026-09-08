@@ -1,9 +1,9 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
-import { deliveryWhere, issueWhere, seesAllData } from '@/lib/scope';
+import { deliveryWhere, issueWhere, runWhere, seesAllData } from '@/lib/scope';
 import { setIssueStatusAction } from '@/lib/actions';
-import { PageHeader, Card, Table, Td, Badge, EmptyState, Button, Notice, when } from '@/components/ui';
+import { PageHeader, Card, Table, Row, Td, Badge, EmptyState, Button, Notice, when } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,7 +28,27 @@ export default async function DeliveryHistoryPage({
    */
   const mine = !seesAllData(user);
 
-  const [deliveries, issues] = await Promise.all([
+  const [rounds, deliveries, issues] = await Promise.all([
+    /*
+     * Rounds, newest first — the list a driver actually thinks in.
+     *
+     * A round is the unit of work: "yesterday's fruit route" rather than one
+     * of its forty deliveries. Clicking one opens its report. Outcomes are
+     * pulled in so the summary counts come from the records themselves, and
+     * ABANDONED rounds are included on purpose — a round stopped early keeps
+     * everything recorded up to that point and still deserves a report.
+     */
+    db.routeRun.findMany({
+      where: runWhere(user),
+      include: {
+        routeVersion: { include: { route: { select: { name: true } } } },
+        driver: { select: { firstName: true, lastName: true } },
+        deliveries: { select: { status: true, quantity: true, notes: true } },
+        _count: { select: { issues: true } },
+      },
+      orderBy: { startedAt: 'desc' },
+      take: 50,
+    }),
     db.delivery.findMany({
       where: {
         ...deliveryWhere(user),
@@ -65,6 +85,67 @@ export default async function DeliveryHistoryPage({
         </Notice>
       )}
 
+      {/* ------------------------------------------------------- rounds --- */}
+      <Card
+        title={`Rounds (${rounds.length})`}
+        description="Every round you have run, newest first. Open one for its full report."
+      >
+        {rounds.length === 0 ? (
+          <EmptyState
+            message="No rounds yet."
+            hint="Start a route from Routes and the round will appear here when you record an outcome."
+          />
+        ) : (
+          <Table head={['Round', 'Outcome', 'Packages', 'Stops', 'Notes', 'When']}>
+            {rounds.map((r) => {
+              const delivered = r.deliveries.filter((d) => d.status === 'DELIVERED');
+              const packages = delivered.reduce((sum, d) => sum + d.quantity, 0);
+              const notes = r.deliveries.filter((d) => d.notes?.trim()).length;
+              const state =
+                r.status === 'IN_PROGRESS'
+                  ? 'IN_PROGRESS'
+                  : r.status === 'ABANDONED'
+                    ? 'CANCELLED'
+                    : 'DELIVERED';
+
+              return (
+                <Row key={r.id}>
+                  <Td>
+                    <Link
+                      href={`/delivery-history/runs/${r.id}`}
+                      className="font-medium text-ink underline decoration-line-bright underline-offset-2 hover:decoration-accent"
+                    >
+                      {r.routeVersion.route.name}
+                    </Link>
+                    <p className="text-xs text-ink-dim">
+                      v{r.routeVersion.versionNumber}
+                      {!mine && ` · ${r.driver.firstName} ${r.driver.lastName}`}
+                    </p>
+                  </Td>
+                  <Td>
+                    <Badge>{state}</Badge>
+                  </Td>
+                  <Td className="numeric text-ink">{packages}</Td>
+                  <Td className="numeric text-ink-dim">
+                    {delivered.length}/{r.deliveries.length}
+                  </Td>
+                  <Td className="numeric text-ink-dim">
+                    {notes > 0 ? notes : <span className="text-ink-faint">—</span>}
+                    {r._count.issues > 0 && (
+                      <span className="ml-1.5 text-xs text-warn">
+                        +{r._count.issues} issue{r._count.issues === 1 ? '' : 's'}
+                      </span>
+                    )}
+                  </Td>
+                  <Td className="whitespace-nowrap text-ink-dim">{when(r.startedAt)}</Td>
+                </Row>
+              );
+            })}
+          </Table>
+        )}
+      </Card>
+
+      {/* --------------------------------------------- every delivery --- */}
       <Card>
         <form className="flex flex-wrap items-end gap-3 border-b border-line px-5 py-4">
           <label>
@@ -87,7 +168,7 @@ export default async function DeliveryHistoryPage({
         {deliveries.length === 0 ? (
           <EmptyState message="No deliveries match this filter." />
         ) : (
-          <Table head={['Location', 'Customer', 'Route', 'Qty', 'Status', 'Reason', 'When']}>
+          <Table head={['Location', 'Customer', 'Route', 'Qty', 'Status', 'Reason', 'Note', 'When']}>
             {deliveries.map((d) => (
               <tr key={d.id} className="align-top hover:bg-panel-2/60">
                 <Td>
@@ -113,6 +194,13 @@ export default async function DeliveryHistoryPage({
                 </Td>
                 <Td className="max-w-56 text-ink-dim">
                   {d.reason ?? <span className="text-ink-faint">—</span>}
+                </Td>
+                <Td className="max-w-56 text-ink-dim">
+                  {d.notes?.trim() ? (
+                    <span className="break-anywhere">{d.notes}</span>
+                  ) : (
+                    <span className="text-ink-faint">—</span>
+                  )}
                 </Td>
                 <Td className="whitespace-nowrap text-ink-dim">{when(d.timestamp)}</Td>
               </tr>

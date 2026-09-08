@@ -181,6 +181,9 @@ async function setup() {
       timestamp: new Date(),
       latitude: 13.6288,
       longitude: 79.4192,
+      // A note typed at the door, and repeated at the next stop, so the round
+      // report's "said more than once" grouping has something to group.
+      notes: 'box not returned',
     },
   });
   await db.delivery.create({
@@ -191,6 +194,7 @@ async function setup() {
       status: 'DELIVERED',
       quantity: 2,
       timestamp: new Date(),
+      notes: 'box not returned',
     },
   });
   await db.issue.create({

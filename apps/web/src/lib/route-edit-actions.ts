@@ -389,8 +389,29 @@ export async function deleteRouteAction(_prev: EditState, formData: FormData): P
         error: `This route has ${deliveries} delivery record(s) across ${runs} run(s). Deleting it would destroy that history — archive it instead.`,
       };
     }
-    if (user.role !== 'ADMIN' && route.createdById !== user.id) {
-      return { error: 'Only an administrator or the route’s creator can delete it permanently.' };
+    /*
+     * Who may permanently delete.
+     *
+     * Admin, the creator, or the driver it is assigned to. Assignment used to
+     * be excluded, so a driver handed a route someone else had built could
+     * archive it but not remove it — an odd half-permission given they are the
+     * one working it, and agents are meant to have admin-like reach over
+     * routes (just not over accounts).
+     *
+     * The real protection is the history check above, not this test: a route
+     * with any run or delivery against it cannot be permanently deleted by
+     * anyone, including an admin.
+     */
+    const driverProfile = await db.driverProfile.findUnique({ where: { userId: user.id } });
+    const mayDelete =
+      user.role === 'ADMIN' ||
+      route.createdById === user.id ||
+      (route.driverId !== null && route.driverId === driverProfile?.id);
+
+    if (!mayDelete) {
+      return {
+        error: 'Only an administrator, the route’s creator, or its assigned driver can delete it.',
+      };
     }
 
     // Safe now: nothing references these versions.

@@ -5,7 +5,7 @@ Two layers, and one deliberately-quarantined third.
 | Layer | Count | Needs a server? | Needs the database? |
 |---|---|---|---|
 | Unit + integration (Vitest) | 114 | no | no |
-| End-to-end (Playwright scripts) | 49 | yes | yes |
+| End-to-end (Playwright scripts) | 58 | yes | yes |
 | `tests/ui.spec.ts` (legacy) | — | — | **broken — see the end** |
 
 ---
@@ -89,7 +89,7 @@ Signs in as **agent A** (owns data), **agent B** (must see none of it), and an
   route, admin still sees the fleet. Without these, a blank page would pass
   every "sees nothing" assertion.
 
-### `features.mjs` — 25 checks
+### `features.mjs` — 34 checks
 
 - **Delivery report**: packages delivered, checkpoints done, per-type breakdown
 - **Pick-lists per round**: round one's types are `Big box | Fruit crate`, round
@@ -100,6 +100,10 @@ Signs in as **agent A** (owns data), **agent B** (must see none of it), and an
   starting a run asks OSRM to re-order the stops from the driver's position)
 - **"Still in your bag" note**: appears after a checkpoint, names the remaining
   type and count, then clears itself after 9s
+- **Rounds in history**: the list shows rounds (not only deliveries), clicking
+  one opens its report, and a round stopped early still reports
+- **Notes as "name — note"**: what the driver typed at each door, with a note
+  repeated across stops grouped and counted (`×2 box not returned`)
 - No uncaught client errors on any screen touched
 
 ---
@@ -173,7 +177,7 @@ A's data"* is satisfied by a page that failed to load.
 
 The original Playwright suite still signs in as the seeded demo accounts, which
 were deliberately deleted. **It fails, and that is expected.** It is not wired
-into `pnpm test`, so it does not affect the 114 unit tests or the 49 e2e checks.
+into `pnpm test`, so it does not affect the 114 unit tests or the 58 e2e checks.
 
 Rewriting it against `tests/e2e/lib.mjs` is a TODO — the fixtures and helpers it
 would need now exist.

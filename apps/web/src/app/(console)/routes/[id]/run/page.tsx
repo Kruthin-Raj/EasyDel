@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { loadSettings } from '@/lib/permissions';
+import { seesAllData } from '@/lib/scope';
+import Forbidden from '@/components/Forbidden';
 import { signedPhotoUrl } from '@/lib/storage';
 import { startRunAction } from '@/lib/run-actions';
 import RunConsole, { type RunStop } from '@/components/RunConsole';
@@ -44,6 +46,31 @@ export default async function RunPage({
   });
 
   if (!route) notFound();
+
+  /*
+   * Whose route this is.
+   *
+   * The page had no ownership check at all — only startRunAction did — so
+   * anyone signed in could open another driver's run screen by URL and read
+   * their stops, addresses and customers. Mirrors the rule in startRunAction,
+   * so what you can open is what you can start.
+   */
+  const canRun =
+    seesAllData(user) ||
+    route.createdById === user.id ||
+    (route.driver !== null && route.driver.userId === user.id);
+
+  if (!canRun) {
+    return (
+      <Forbidden
+        title="This round is not yours"
+        reason="You can only run routes you created or that are assigned to you."
+        role={user.role}
+        hint="Your own routes are listed under Routes."
+      />
+    );
+  }
+
   const version = route.versions[0];
 
   const settings = await loadSettings();

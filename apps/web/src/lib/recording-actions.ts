@@ -479,14 +479,41 @@ export async function generateRouteFromSessionAction(
 
   const existing = await db.deliveryLocation.findMany({
     where: { status: { in: ['ACTIVE', 'PAUSED'] } },
-    select: { id: true, latitude: true, longitude: true },
+    // `name` is needed as well as the position: reuse requires both.
+    select: { id: true, name: true, latitude: true, longitude: true },
   });
 
   const locationIds: string[] = [];
 
+  /*
+   * A location may be reused by at most one checkpoint in this session.
+   *
+   * Without this, two checkpoints recorded close together both matched the
+   * same existing location and the round collapsed to a single stop — a driver
+   * who logged two houses saw one, named after somebody else's building. Two
+   * checkpoints were deliberately recorded, so they must become two stops.
+   */
+  const claimed = new Set<string>();
+
+  /** Same building, spelled the same way, ignoring case and spacing. */
+  const sameName = (a: string, b: string) =>
+    a.trim().toLowerCase().replace(/\s+/g, ' ') === b.trim().toLowerCase().replace(/\s+/g, ' ');
+
   for (const checkpoint of session.checkpoints) {
+    /*
+     * Reuse an existing location only when it is both nearby AND recorded
+     * under the same name.
+     *
+     * Proximity alone was matching anything within 40m, which in a terrace or
+     * a block of flats is several different doors — and it renamed the
+     * driver's checkpoint to whatever was there first. Requiring the name to
+     * agree still prevents duplicates when the same round is recorded twice,
+     * which is what the rule was for.
+     */
     const near = existing.find(
       (l) =>
+        !claimed.has(l.id) &&
+        sameName(l.name, checkpoint.name) &&
         haversine(
           { lat: checkpoint.latitude, lng: checkpoint.longitude },
           { lat: l.latitude, lng: l.longitude },
@@ -494,6 +521,7 @@ export async function generateRouteFromSessionAction(
     );
 
     if (near) {
+      claimed.add(near.id);
       locationIds.push(near.id);
       continue;
     }
@@ -512,7 +540,15 @@ export async function generateRouteFromSessionAction(
         photo: checkpoint.photoUrl,
       },
     });
-    existing.push({ id: created.id, latitude: created.latitude, longitude: created.longitude });
+    existing.push({
+      id: created.id,
+      name: created.name,
+      latitude: created.latitude,
+      longitude: created.longitude,
+    });
+    // Claimed immediately, so a later checkpoint in this same session cannot
+    // fold itself into the location this one just created.
+    claimed.add(created.id);
     locationIds.push(created.id);
 
     // A recorded house with a delivery type is a real recurring delivery, so

@@ -125,7 +125,7 @@ export default async function TrainingSessionPage({
               >
                 <input type="hidden" name="sessionId" value={session.id} />
                 <p className="text-sm text-ink-dim">
-                  Houses within 40 m of an existing location are reused rather than duplicated.
+                  Every house you recorded becomes its own stop. An existing location is reused only when it is both within 40 m and recorded under the same name, so two houses logged close together are never merged into one.
                 </p>
               </ActionForm>
             </div>

@@ -209,6 +209,113 @@ select.field {
   padding-right: 2rem;
 }
 
+/* ------------------------------------------------------------- touch --- */
+/*
+ * Anything driven by a fingertip gets a 44px minimum — the size Apple and
+ * Google both specify — and form controls get a 16px floor.
+ *
+ * The 16px is not cosmetic: iOS Safari zooms the whole page in when you focus
+ * an input smaller than that, and it does not zoom back out afterwards. The
+ * driver is then left panned somewhere in an oversized layout mid-delivery.
+ *
+ * Keyed on `pointer: coarse` rather than a width, so a touchscreen laptop is
+ * treated as touch and a narrow desktop window is not.
+ */
+@media (pointer: coarse) {
+  .field {
+    font-size: 1rem;
+    min-height: 2.75rem;
+  }
+
+  .btn {
+    min-height: 2.75rem;
+  }
+
+  .check {
+    height: 1.25rem;
+    width: 1.25rem;
+  }
+}
+
+/* ------------------------------------------------------------ tables --- */
+/*
+ * On a phone a seven-column table can only be read by dragging it sideways, so
+ * below 640px every row becomes a card and every cell prints its own column
+ * heading.
+ *
+ * The headings are read from custom properties that <Table> sets on the table
+ * element, which is why no page markup had to change. Element selectors here
+ * are deliberately unlayered: that outranks Tailwind's layered utilities, so
+ * the padding below reliably replaces each cell's `px-5 py-3`.
+ */
+@media (max-width: 639.98px) {
+  table.stacked-table,
+  table.stacked-table tbody,
+  table.stacked-table tr,
+  table.stacked-table td {
+    display: block;
+    width: 100%;
+  }
+
+  /* Visually hidden, not removed — the column names still belong to the table
+     for anyone reading it with a screen reader. */
+  table.stacked-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  table.stacked-table tr {
+    padding: 0.5rem 0;
+  }
+
+  table.stacked-table td {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.35rem 1rem;
+    text-align: right;
+  }
+
+  table.stacked-table td::before {
+    content: var(--stacked-label, "");
+    flex: 0 0 auto;
+    max-width: 45%;
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    line-height: 1.3;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    text-align: left;
+    color: var(--color-ink-faint);
+  }
+
+  /* Empty-state rows span every column: no heading, and centred as designed. */
+  table.stacked-table td[colspan] {
+    display: block;
+    padding: 0;
+    text-align: center;
+  }
+
+  table.stacked-table td[colspan]::before {
+    content: none;
+  }
+
+  table.stacked-table td:nth-child(1) { --stacked-label: var(--col-1); }
+  table.stacked-table td:nth-child(2) { --stacked-label: var(--col-2); }
+  table.stacked-table td:nth-child(3) { --stacked-label: var(--col-3); }
+  table.stacked-table td:nth-child(4) { --stacked-label: var(--col-4); }
+  table.stacked-table td:nth-child(5) { --stacked-label: var(--col-5); }
+  table.stacked-table td:nth-child(6) { --stacked-label: var(--col-6); }
+  table.stacked-table td:nth-child(7) { --stacked-label: var(--col-7); }
+  table.stacked-table td:nth-child(8) { --stacked-label: var(--col-8); }
+}
+
 /* Checkboxes: square, amber when on, to match the console language. */
 .check {
   appearance: none;

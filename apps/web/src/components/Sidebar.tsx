@@ -63,8 +63,15 @@ const GROUPS: { label: string; items: { name: string; href: string; icon: typeof
 
 export default function Sidebar({
   user,
+  onNavigate,
 }: {
   user: { email: string; firstName: string; lastName: string; role: string };
+  /**
+   * Called when the operator picks a destination. Set by the mobile drawer so
+   * it closes itself; undefined for the static desktop rail, which never needs
+   * dismissing.
+   */
+  onNavigate?: () => void;
 }) {
   const pathname = usePathname();
 
@@ -100,8 +107,12 @@ export default function Sidebar({
                   <li key={item.href}>
                     <Link
                       href={item.href}
+                      onClick={onNavigate}
                       aria-current={isActive ? 'page' : undefined}
-                      className={`group relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
+                      // min-h-11 gives a 44px touch target on the drawer, the
+                      // minimum both Apple and Google specify. The desktop rail
+                      // is pointer-driven and stays compact.
+                      className={`group relative flex min-h-11 items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors lg:min-h-0 ${
                         isActive
                           ? 'bg-panel-2 font-medium text-ink'
                           : 'text-ink-dim hover:bg-panel/70 hover:text-ink'
@@ -134,7 +145,8 @@ export default function Sidebar({
       <div className="border-t border-line p-3">
         <Link
           href="/download-app"
-          className="mb-2 flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-ink-dim transition-colors hover:bg-panel-2 hover:text-ink"
+          onClick={onNavigate}
+          className="mb-2 flex min-h-11 items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-ink-dim transition-colors hover:bg-panel-2 hover:text-ink lg:min-h-0"
         >
           <Smartphone className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden />
           <span>Agent app</span>
@@ -157,7 +169,7 @@ export default function Sidebar({
         <form action={logoutAction}>
           <button
             type="submit"
-            className="mt-1 flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-ink-dim transition-colors hover:bg-panel-2 hover:text-ink"
+            className="mt-1 flex min-h-11 w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-ink-dim transition-colors hover:bg-panel-2 hover:text-ink lg:min-h-0"
           >
             <LogOut className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden />
             <span>Sign out</span>

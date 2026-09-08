@@ -55,15 +55,31 @@ function pathLength(pts: Point[]) {
 }
 
 /**
- * Drops stops that coincide with an earlier stop (within `thresholdM`), so a
- * duplicated import doesn't produce two markers on the same doorstep.
+ * Drops a stop that is the *same location* listed twice on one route.
+ *
+ * This used to drop anything within 15 m of an earlier stop, which silently
+ * deleted real work: two houses recorded a metre apart became one stop, and the
+ * driver's second checkpoint vanished between saving the round and running it.
+ * Neighbouring doors, flats in one building and two shops in a row are all
+ * well inside 15 m and are all separate deliveries.
+ *
+ * Identity is the right test. Duplicate *buildings* are prevented where they
+ * are created — the importer flags anything within 60 m, and route generation
+ * reuses an existing location only when the name matches too — so proximity
+ * here was redundant as well as harmful.
  */
-function dedupe(stops: Point[], thresholdM = 15) {
+function dedupe(stops: Point[]) {
   const kept: Point[] = [];
+  const seen = new Set<string>();
   let dropped = 0;
+
   for (const s of stops) {
-    if (kept.some((k) => haversine(k, s) < thresholdM)) dropped++;
-    else kept.push(s);
+    if (seen.has(s.id)) {
+      dropped++;
+      continue;
+    }
+    seen.add(s.id);
+    kept.push(s);
   }
   return { kept, dropped };
 }

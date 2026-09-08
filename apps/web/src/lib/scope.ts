@@ -65,17 +65,21 @@ export function runWhere(user: SessionUser): Prisma.RouteRunWhereInput {
   return { driverId: user.id };
 }
 
-/** Routes: created by, assigned to, or unclaimed. */
+/**
+ * Routes: created by, or assigned to, this person. Nothing else.
+ *
+ * Unclaimed routes were once included too, so an agent could pick up work
+ * nobody had been given. In practice every route starts unassigned, so that
+ * clause showed each agent every other agent's brand-new routes — one person
+ * signing up meant their round appeared in everyone's list. Creating a route
+ * is the claim; an admin assigns anything that needs handing over.
+ */
 export async function routeWhere(user: SessionUser): Promise<Prisma.RouteWhereInput> {
   if (seesAllData(user)) return {};
 
   const profileId = await driverProfileIdFor(user.id);
   return {
-    OR: [
-      { createdById: user.id },
-      ...(profileId ? [{ driverId: profileId }] : []),
-      { driverId: null },
-    ],
+    OR: [{ createdById: user.id }, ...(profileId ? [{ driverId: profileId }] : [])],
   };
 }
 

@@ -142,16 +142,37 @@ describe('optimizeRoute — correctness', () => {
 });
 
 describe('optimizeRoute — duplicates', () => {
-  it('drops stops that coincide with an earlier stop', () => {
+  it('drops the same location listed twice on one route', () => {
     const a = stop(1, 13.64, 79.43);
-    const duplicate = { ...a, id: 's1-dup' };
-    const r = optimizeRoute(DEPOT, DEPOT, [a, duplicate, stop(2, 13.65, 79.44)]);
+    const r = optimizeRoute(DEPOT, DEPOT, [a, { ...a }, stop(2, 13.65, 79.44)]);
     expect(r.order).toHaveLength(2);
     expect(r.droppedDuplicates).toBe(1);
   });
 
-  it('keeps distinct stops that are merely close but beyond the threshold', () => {
-    // ~0.002 degrees latitude is roughly 222 m, well past the 15 m threshold.
+  /*
+   * Distinct locations are distinct stops however close together they sit.
+   *
+   * This previously dropped anything within 15 m, which deleted real work:
+   * two houses recorded a metre apart became one stop and the driver's second
+   * checkpoint disappeared before they could run the route. Flats in one
+   * building share a position entirely.
+   */
+  it('keeps distinct locations recorded a metre apart', () => {
+    const r = optimizeRoute(DEPOT, DEPOT, [
+      stop(1, 13.21339, 79.09265),
+      stop(2, 13.21339, 79.09264),
+    ]);
+    expect(r.order).toHaveLength(2);
+    expect(r.droppedDuplicates).toBe(0);
+  });
+
+  it('keeps distinct locations at exactly the same position', () => {
+    const r = optimizeRoute(DEPOT, DEPOT, [stop(1, 13.64, 79.43), stop(2, 13.64, 79.43)]);
+    expect(r.order).toHaveLength(2);
+    expect(r.droppedDuplicates).toBe(0);
+  });
+
+  it('keeps stops that are far apart', () => {
     const r = optimizeRoute(DEPOT, DEPOT, [stop(1, 13.64, 79.43), stop(2, 13.642, 79.43)]);
     expect(r.order).toHaveLength(2);
     expect(r.droppedDuplicates).toBe(0);

@@ -81,9 +81,14 @@ export async function startRunAction(_prev: RunState, formData: FormData): Promi
   const isAdmin = user.role === 'ADMIN';
   const isAssignee = assignedUserId === user.id;
   const isCreator = route.createdById === user.id;
-  const unassigned = assignedUserId === null;
 
-  if (!isAdmin && !isAssignee && !isCreator && !unassigned) {
+  /*
+   * "Anyone may run an unassigned route" used to be allowed here. It has been
+   * dropped so this matches what the Routes list shows: every route starts
+   * unassigned, so that rule let one agent start a round another agent had
+   * just built. Creating a route is the claim on it.
+   */
+  if (!isAdmin && !isAssignee && !isCreator) {
     return {
       error: `This route is assigned to another driver. Ask an administrator to reassign it, or run one of your own.`,
     };

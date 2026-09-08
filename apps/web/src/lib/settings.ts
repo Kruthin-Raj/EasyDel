@@ -24,6 +24,7 @@ export const SETTING_DEFAULTS: Record<string, string> = {
   agents_can_share_routes: 'true',
   auto_approve_agent_routes: 'false',
   delivery_geofence_metres: '150',
+  agents_can_edit_dropdown: 'false',
 
   /*
    * Newline-separated delivery types offered in the checkpoint form. Kept as

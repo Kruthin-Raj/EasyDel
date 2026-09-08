@@ -1,5 +1,6 @@
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
+import { can } from '@/lib/permissions';
 import Forbidden from '@/components/Forbidden';
 import { saveSettingsAction } from '@/lib/actions';
 import { SETTING_DEFAULTS } from '@/lib/settings';
@@ -18,13 +19,17 @@ const TOGGLES: { key: string; label: string; description: string }[] = [
   { key: 'agents_can_request_location_changes', label: 'Agents can request location changes', description: 'Lets agents submit a change request instead of editing directly.' },
   { key: 'agents_can_create_training_routes', label: 'Agents can create training routes', description: 'Allows recording a route by physically driving it.' },
   { key: 'agents_can_share_routes', label: 'Agents can share routes', description: 'Lets agents share a route with another agent, mentor or admin.' },
+  { key: 'agents_can_edit_dropdown', label: 'Agents can edit dropdown', description: 'Allows agents to edit the package types dropdown in Settings.' },
   { key: 'auto_approve_agent_routes', label: 'Auto-approve agent routes', description: 'Skips admin review entirely. Leave off for production routes.' },
 ];
 
 export default async function SettingsPage() {
   const user = await requireUser();
 
-  if (user.role !== 'ADMIN') {
+  const isAdmin = user.role === 'ADMIN';
+  const canEditDropdown = await can(user, 'edit_dropdown');
+
+  if (!isAdmin && !canEditDropdown) {
     return (
       <Forbidden
         title="Settings are administrator-only"
@@ -54,32 +59,34 @@ export default async function SettingsPage() {
         <Card>
           <div className="p-5">
             <ActionForm action={saveSettingsAction} submitLabel="Save settings" pendingLabel="Saving…">
-              <fieldset className="space-y-1">
-                <legend className="mb-2 text-sm font-semibold text-ink">
-                  Delivery agent permissions
-                </legend>
-                <div className="divide-y divide-line/70 rounded-lg ring-1 ring-inset ring-line">
-                  {TOGGLES.map((t) => (
-                    <label
-                      key={t.key}
-                      className="flex cursor-pointer items-start gap-3 p-4 hover:bg-panel-2/60"
-                    >
-                      <input
-                        type="checkbox"
-                        name={t.key}
-                        defaultChecked={current[t.key] === 'true'}
-                        className="check mt-0.5"
-                      />
-                      <span>
-                        <span className="block text-sm font-medium text-ink">{t.label}</span>
-                        <span className="block text-sm text-ink-dim">{t.description}</span>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
+              {isAdmin && (
+                <fieldset className="space-y-1 mb-4">
+                  <legend className="mb-2 text-sm font-semibold text-ink">
+                    Delivery agent permissions
+                  </legend>
+                  <div className="divide-y divide-line/70 rounded-lg ring-1 ring-inset ring-line">
+                    {TOGGLES.map((t) => (
+                      <label
+                        key={t.key}
+                        className="flex cursor-pointer items-start gap-3 p-4 hover:bg-panel-2/60"
+                      >
+                        <input
+                          type="checkbox"
+                          name={t.key}
+                          defaultChecked={current[t.key] === 'true'}
+                          className="check mt-0.5"
+                        />
+                        <span>
+                          <span className="block text-sm font-medium text-ink">{t.label}</span>
+                          <span className="block text-sm text-ink-dim">{t.description}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              )}
 
-              <fieldset className="rounded-lg ring-1 ring-inset ring-line p-4">
+              <fieldset className="rounded-lg ring-1 ring-inset ring-line p-4 mb-4">
                 <legend className="px-1 text-sm font-semibold text-ink">Package types</legend>
                 <label className="block">
                   <span className="mb-1.5 block text-sm font-medium text-ink">
@@ -99,42 +106,46 @@ export default async function SettingsPage() {
                 </label>
               </fieldset>
 
-              <fieldset className="rounded-lg ring-1 ring-inset ring-line p-4">
-                <legend className="px-1 text-sm font-semibold text-ink">
-                  Delivery geofence
-                </legend>
-                <Field
-                  label="Warn if driver is further than (metres)"
-                  name="delivery_geofence_metres"
-                  type="number"
-                  required
-                  defaultValue={current.delivery_geofence_metres}
-                  hint="Between 10 and 5000. The mobile app warns before accepting a delivery beyond this distance."
-                />
-              </fieldset>
+              {isAdmin && (
+                <fieldset className="rounded-lg ring-1 ring-inset ring-line p-4">
+                  <legend className="px-1 text-sm font-semibold text-ink">
+                    Delivery geofence
+                  </legend>
+                  <Field
+                    label="Warn if driver is further than (metres)"
+                    name="delivery_geofence_metres"
+                    type="number"
+                    required
+                    defaultValue={current.delivery_geofence_metres}
+                    hint="Between 10 and 5000. The mobile app warns before accepting a delivery beyond this distance."
+                  />
+                </fieldset>
+              )}
             </ActionForm>
           </div>
         </Card>
 
-        <Card title="Environment" description="Read-only view of how this instance is configured.">
-          <dl className="divide-y divide-line/70">
-            {[
-              { k: 'Routing provider', v: process.env.ROUTING_PROVIDER ?? 'OSRM (default)' },
-              { k: 'OSRM endpoint', v: process.env.OSRM_URL ?? 'not set' },
-              { k: 'Geocoding endpoint', v: process.env.GEOCODING_URL ?? 'not set' },
-              { k: 'Database', v: process.env.DATABASE_URL ? 'configured' : 'NOT configured' },
-              { k: 'Node environment', v: process.env.NODE_ENV ?? 'unknown' },
-            ].map((row) => (
-              <div key={row.k} className="flex flex-wrap justify-between gap-2 px-5 py-3">
-                <dt className="text-sm font-medium text-ink">{row.k}</dt>
-                <dd className="break-anywhere text-sm text-ink-dim">{row.v}</dd>
-              </div>
-            ))}
-          </dl>
-          <p className="border-t border-line px-5 py-3 text-xs text-ink-dim">
-            Secret values are never rendered here — only whether they are set.
-          </p>
-        </Card>
+        {isAdmin && (
+          <Card title="Environment" description="Read-only view of how this instance is configured.">
+            <dl className="divide-y divide-line/70">
+              {[
+                { k: 'Routing provider', v: process.env.ROUTING_PROVIDER ?? 'OSRM (default)' },
+                { k: 'OSRM endpoint', v: process.env.OSRM_URL ?? 'not set' },
+                { k: 'Geocoding endpoint', v: process.env.GEOCODING_URL ?? 'not set' },
+                { k: 'Database', v: process.env.DATABASE_URL ? 'configured' : 'NOT configured' },
+                { k: 'Node environment', v: process.env.NODE_ENV ?? 'unknown' },
+              ].map((row) => (
+                <div key={row.k} className="flex flex-wrap justify-between gap-2 px-5 py-3">
+                  <dt className="text-sm font-medium text-ink">{row.k}</dt>
+                  <dd className="break-anywhere text-sm text-ink-dim">{row.v}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="border-t border-line px-5 py-3 text-xs text-ink-dim">
+              Secret values are never rendered here — only whether they are set.
+            </p>
+          </Card>
+        )}
       </div>
     </>
   );

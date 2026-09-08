@@ -21,7 +21,8 @@ export type Capability =
   | 'edit_locations'
   | 'request_location_changes'
   | 'create_training_routes'
-  | 'share_routes';
+  | 'share_routes'
+  | 'edit_dropdown';
 
 /** Capability -> the Setting key that governs it for non-admins. */
 const SETTING_FOR: Record<Capability, string> = {
@@ -34,6 +35,7 @@ const SETTING_FOR: Record<Capability, string> = {
   request_location_changes: 'agents_can_request_location_changes',
   create_training_routes: 'agents_can_create_training_routes',
   share_routes: 'agents_can_share_routes',
+  edit_dropdown: 'agents_can_edit_dropdown',
 };
 
 /** Reads all settings once, falling back to the documented defaults. */

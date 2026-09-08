@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { db } from './db';
 import { requireAdmin, requireUser } from './auth';
-import { requireCapability } from './permissions';
+import { requireCapability, can } from './permissions';
 import { optimizeRoute, refineWithOsrm, isValidCoord, haversine, type Point } from './optimize';
 import { SETTING_DEFAULTS } from './settings';
 import type { ParsedRow } from './import-parse';
@@ -526,14 +526,22 @@ export async function saveSettingsAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const user = await requireAdmin();
+  const user = await requireUser();
+  const isAdmin = user.role === 'ADMIN';
+  const canEditDropdown = await can(user, 'edit_dropdown');
+
+  if (!isAdmin && !canEditDropdown) {
+    return { error: 'Forbidden.' };
+  }
 
   const geofence = Number(formData.get('delivery_geofence_metres'));
-  if (!Number.isFinite(geofence) || geofence < 10 || geofence > 5000) {
+  if (isAdmin && (!Number.isFinite(geofence) || geofence < 10 || geofence > 5000)) {
     return { error: 'Delivery geofence must be between 10 and 5000 metres.' };
   }
 
   for (const key of Object.keys(SETTING_DEFAULTS)) {
+    if (!isAdmin && key !== 'checkpoint_type_options') continue;
+
     const raw = formData.get(key);
     let value = '';
     if (key === 'delivery_geofence_metres') {

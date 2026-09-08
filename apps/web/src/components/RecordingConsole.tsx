@@ -5,6 +5,7 @@ import { useFormStatus } from 'react-dom';
 import { MapPin, Camera, Check, Trash2, Loader2, Satellite } from 'lucide-react';
 import RecordMap from '@/components/RecordMap';
 import CheckpointEditor from '@/components/CheckpointEditor';
+import { downscaleImage, readableSize } from '@/lib/downscale';
 import {
   addCheckpointAction,
   appendTrackAction,
@@ -30,6 +31,12 @@ type Checkpoint = {
 };
 
 type Fix = { lat: number; lng: number; accuracy: number };
+
+/*
+ * Refuse client-side just under the server's 4mb Server Action limit, leaving
+ * room for the multipart boundaries and the other form fields.
+ */
+const MAX_UPLOAD_BYTES = 3.5 * 1024 * 1024;
 
 function SaveButton({ label }: { label: string }) {
   const { pending } = useFormStatus();
@@ -61,8 +68,17 @@ export default function RecordingConsole({
   checkpoints,
   deliveryTypes,
   startedAt,
+  initialTrack,
 }: {
   sessionId: string;
+  /**
+   * The GPS track already saved for this round.
+   *
+   * Without it the map's trail started empty on every load, so a driver who
+   * backgrounded the tab and came back saw the path they had recorded vanish.
+   * The data was in the database the whole time; it was simply never sent back.
+   */
+  initialTrack: number[][];
   /**
    * Names pasted before the round started. Offered as a dropdown on the name
    * field so a long name can be picked instead of typed at the gate.
@@ -78,6 +94,51 @@ export default function RecordingConsole({
   const [formOpen, setFormOpen] = useState(false);
   const [elapsed, setElapsed] = useState('');
   const pending = useRef<number[][]>([]);
+  const [photoNote, setPhotoNote] = useState<string | null>(null);
+
+  /*
+   * Shrink the chosen photo in place, before the form is submitted.
+   *
+   * A photo off a phone is 2-8MB, which breaches both Next's Server Action
+   * body limit and Vercel's 4.5MB request cap — the upload returned a 500 and
+   * the checkpoint was lost with nothing on screen to explain it.
+   *
+   * The downscaled file is written back into the input via DataTransfer, so the
+   * form still submits exactly as it did and the Server Action is unchanged.
+   * Any failure leaves the original file in place (see lib/downscale.ts).
+   */
+  async function onPhotoChosen(event: React.ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const chosen = input.files?.[0];
+    if (!chosen) {
+      setPhotoNote(null);
+      return;
+    }
+
+    setPhotoNote('Preparing photo…');
+    const { file, original } = await downscaleImage(chosen);
+
+    if (!original) {
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      input.files = transfer.files;
+    }
+
+    // Both ceilings live on the server; refusing here means the driver gets a
+    // sentence instead of a 500.
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setPhotoNote(
+        `That photo is ${readableSize(file.size)} — too large to upload. Take it again at a lower resolution.`,
+      );
+      return;
+    }
+
+    setPhotoNote(
+      original
+        ? `Photo ready (${readableSize(file.size)}).`
+        : `Shrunk from ${readableSize(chosen.size)} to ${readableSize(file.size)}.`,
+    );
+  }
 
   const [addState, addAction] = useActionState(addCheckpointAction, null);
   const [endState, endAction] = useActionState(endRecordingAction, null);
@@ -116,9 +177,7 @@ export default function RecordingConsole({
 
   // --- flush the track periodically ---------------------------------------
   useEffect(() => {
-    // Batched every 20s rather than per reading: a round produces hundreds of
-    // fixes and one request each would hammer the server for no extra detail.
-    const timer = setInterval(() => {
+    const flush = () => {
       if (pending.current.length === 0) return;
       const batch = pending.current;
       pending.current = [];
@@ -129,9 +188,38 @@ export default function RecordingConsole({
       // Fire and forget — a dropped batch costs a little track detail, nothing
       // more, and must never interrupt the driver.
       void appendTrackAction(data).catch(() => {});
-    }, 20000);
+    };
 
-    return () => clearInterval(timer);
+    // Batched every 20s rather than per reading: a round produces hundreds of
+    // fixes and one request each would hammer the server for no extra detail.
+    const timer = setInterval(flush, 20000);
+
+    /*
+     * Also flush the moment the tab is hidden.
+     *
+     * A phone browser suspends a backgrounded tab and may kill it outright
+     * when the driver switches apps or clears it from the app switcher. On the
+     * 20s timer alone, up to twenty seconds of track died with it — recorded
+     * by the phone, never saved, and gone for good.
+     *
+     * `visibilitychange` is the event that actually fires on mobile;
+     * `pagehide` covers the tab being discarded, and `beforeunload` is
+     * unreliable on iOS. Both are cheap and idempotent.
+     */
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('pagehide', flush);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', flush);
+      // Last chance: the console is unmounting, so anything still buffered
+      // would otherwise be discarded.
+      flush();
+    };
   }, [sessionId]);
 
   // --- elapsed timer -------------------------------------------------------
@@ -179,6 +267,7 @@ export default function RecordingConsole({
       </div>
 
       <RecordMap
+        initialTrack={initialTrack}
         checkpoints={checkpoints.map((c) => ({
           id: c.id,
           sequence: c.sequence,
@@ -363,9 +452,12 @@ export default function RecordingConsole({
                 name="photo"
                 accept="image/*"
                 capture="environment"
+                onChange={onPhotoChosen}
                 className="block w-full cursor-pointer rounded-lg text-sm text-ink-dim ring-1 ring-inset ring-line file:mr-3 file:cursor-pointer file:rounded-l-lg file:border-0 file:bg-panel-2 file:px-4 file:py-2.5 file:text-sm file:font-medium file:text-ink"
               />
-              <span className="mt-1.5 block text-xs text-ink-dim">Optional.</span>
+              <span className="mt-1.5 block text-xs text-ink-dim">
+                {photoNote ?? 'Optional. Large photos are shrunk before uploading.'}
+              </span>
             </label>
 
             <label className="flex items-center gap-2.5 rounded-lg bg-surface-2 p-3 ring-1 ring-inset ring-line">

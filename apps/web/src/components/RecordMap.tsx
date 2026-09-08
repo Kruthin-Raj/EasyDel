@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Crosshair } from 'lucide-react';
@@ -22,15 +22,28 @@ export type RecordedPoint = {
  * they expected. A checkpoint appearing on the map the instant it is saved is
  * the difference between trusting the round and re-doing it.
  *
- * The breadcrumb trail is drawn client-side from the positions seen in this
- * session — the authoritative track still goes to the server separately.
+ * The trail is seeded from the track already saved for this round and then
+ * extended from live positions. Seeding matters: it used to start empty on
+ * every load, so a driver who backgrounded the tab and came back saw the path
+ * they had recorded disappear, even though the server still held it.
  */
-export default function RecordMap({ checkpoints }: { checkpoints: RecordedPoint[] }) {
+export default function RecordMap({
+  checkpoints,
+  initialTrack = [],
+}: {
+  checkpoints: RecordedPoint[];
+  /** Track already saved for this round, as [lng, lat] pairs. */
+  initialTrack?: number[][];
+}) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const driverMarker = useRef<maplibregl.Marker | null>(null);
   const markers = useRef<maplibregl.Marker[]>([]);
-  const trail = useRef<number[][]>([]);
+  /*
+   * Seeded once from the saved track, then appended to. Capped at the same 500
+   * points the live path uses, keeping the most recent stretch.
+   */
+  const trail = useRef<number[][]>(initialTrack.slice(-500));
 
   const [fix, setFix] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
   const [ready, setReady] = useState(false);
@@ -39,6 +52,43 @@ export default function RecordMap({ checkpoints }: { checkpoints: RecordedPoint[
   const styleUrl =
     process.env.NEXT_PUBLIC_MAP_STYLE_URL ??
     'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+
+  /**
+   * Paints the breadcrumb of where the driver has been.
+   *
+   * Shared by the live-position effect and the initial seed, so both the
+   * restored track and each new fix go through one code path. Reads the trail
+   * ref rather than taking it as an argument, so it never needs re-creating.
+   */
+  const drawTrail = useCallback((instance: maplibregl.Map) => {
+    const data = {
+      type: 'Feature' as const,
+      properties: {},
+      geometry: { type: 'LineString' as const, coordinates: trail.current },
+    };
+
+    const paint = () => {
+      const source = instance.getSource('trail') as maplibregl.GeoJSONSource | undefined;
+      if (source) {
+        source.setData(data);
+        return;
+      }
+      // A single point is not a line; MapLibre would reject the geometry.
+      if (trail.current.length < 2) return;
+
+      instance.addSource('trail', { type: 'geojson', data });
+      instance.addLayer({
+        id: 'trail',
+        type: 'line',
+        source: 'trail',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': '#2f7dfb', 'line-width': 4, 'line-opacity': 0.75 },
+      });
+    };
+
+    if (instance.isStyleLoaded()) paint();
+    else instance.once('load', paint);
+  }, []);
 
   // Created once. Depending on anything that changes per render would tear the
   // map down and wipe its layers — the bug that hid the route on the run screen.
@@ -104,31 +154,23 @@ export default function RecordMap({ checkpoints }: { checkpoints: RecordedPoint[
       if (follow) instance.easeTo({ center: [fix.lng, fix.lat], duration: 600 });
     }
 
-    // Breadcrumb of where the driver has been this session.
-    const data = {
-      type: 'Feature' as const,
-      properties: {},
-      geometry: { type: 'LineString' as const, coordinates: trail.current },
-    };
-    const draw = () => {
-      const src = instance.getSource('trail') as maplibregl.GeoJSONSource | undefined;
-      if (src) {
-        src.setData(data);
-        return;
-      }
-      if (trail.current.length < 2) return;
-      instance.addSource('trail', { type: 'geojson', data });
-      instance.addLayer({
-        id: 'trail',
-        type: 'line',
-        source: 'trail',
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': '#2f7dfb', 'line-width': 4, 'line-opacity': 0.75 },
-      });
-    };
-    if (instance.isStyleLoaded()) draw();
-    else instance.once('load', draw);
-  }, [fix, ready, follow]);
+    drawTrail(instance);
+  }, [fix, ready, follow, drawTrail]);
+
+  /*
+   * Draw the saved track as soon as the map is ready, without waiting for a
+   * GPS fix.
+   *
+   * The effect above only runs once `fix` exists, so on reopening a round the
+   * already-recorded path stayed invisible until the phone got a lock — which
+   * outdoors can take twenty seconds and reads exactly like the progress
+   * having been lost.
+   */
+  useEffect(() => {
+    const instance = map.current;
+    if (!instance || !ready) return;
+    drawTrail(instance);
+  }, [ready, drawTrail]);
 
   // --- checkpoint pins, appearing as they are saved -----------------------
   useEffect(() => {

@@ -162,6 +162,51 @@ if (await startRun.count()) {
   }
 }
 
+// ------------------------------- rounds in history, and the round report ---
+console.log('\nHistory lists rounds, and a round opens its report\n');
+await p.goto(`${BASE}/delivery-history`, { waitUntil: 'networkidle' });
+const history = (await p.locator('main').first().innerText()).toLowerCase();
+check('history lists rounds, not only deliveries', history.includes('rounds ('));
+check("the fixture's round is listed", history.includes("a's round"));
+check('the delivery table has a Note column', history.includes('note'));
+
+// Clicking a round must open its report.
+await p.getByRole('link', { name: new RegExp(`${TAG} A's round`) }).first().click();
+await p.waitForURL(/\/delivery-history\/runs\//, { timeout: 30000 });
+await p.waitForTimeout(1500);
+const roundReport = await p.locator('main').first().innerText();
+check('round report opens from the history list', /Round report/i.test(roundReport));
+check('the round report shows a package total', /Packages delivered/i.test(roundReport));
+check(
+  'the round report links back to the route',
+  (await p.getByRole('link', { name: /The route/i }).count()) > 0,
+);
+
+/*
+ * Note formatting and totals are asserted against the fixture's own round,
+ * reached by id.
+ *
+ * Two traps here, both hit while writing this: `report` further up is
+ * *lowercased* body text, so matching "Secret House" against it always fails;
+ * and clicking the newest round is not deterministic, because this script
+ * starts a fresh run on the same route earlier on — that round has one stop
+ * and no notes, so both a 5-package total and the note assertions would fail
+ * against it for reasons that have nothing to do with the report.
+ */
+await p.goto(`${BASE}/delivery-history/${DELIVERY_ID}`, { waitUntil: 'networkidle' });
+await p.waitForTimeout(1500);
+const noted = await p.locator('main').first().innerText();
+check(
+  'notes appear as "name — note"',
+  /Secret House[^\n]*—[^\n]*box not returned/.test(noted),
+  (noted.match(/Secret House[^\n]*/) ?? [''])[0].slice(0, 60),
+);
+check(
+  'a note repeated across stops is grouped with its count',
+  /said more than once/i.test(noted) && /×2/.test(noted),
+);
+check('packages summed across the round (3 + 2)', /\b5\b/.test(noted));
+
 check('no uncaught client errors anywhere', clientErrors.length === 0, clientErrors.slice(0, 2).join(' / '));
 
 await finish(browser);

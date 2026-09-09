@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { routeWhere } from '@/lib/scope';
 import { reoptimizeRouteAction } from '@/lib/actions';
+import { cancelRunAction } from '@/lib/run-actions';
 import { PageHeader, Card, Table, Td, Badge, EmptyState, Button, Notice, when, duration, metres } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
@@ -45,6 +46,7 @@ export default async function RoutesPage() {
     where: { driverId: user.id, status: 'IN_PROGRESS' },
     orderBy: { startedAt: 'desc' },
     select: {
+      id: true,
       startedAt: true,
       routeVersion: {
         select: {
@@ -86,20 +88,51 @@ export default async function RoutesPage() {
         }
       />
 
-      {/* The one place a driver can always find the round they left open. */}
+      {/*
+        The one place a driver can always find — and end — the round they left
+        open. The first version only linked to it, which meant a driver whose
+        round had gone stale still had to navigate to the run screen to stop it.
+        Stopping is the thing they actually want, so it is a button right here.
+      */}
       {activeRun && (
         <Notice tone="warning">
-          <strong className="font-semibold">You have a round in progress:</strong>{' '}
-          <Link
-            href={`/routes/${activeRun.routeVersion.routeId}/run`}
-            className="font-semibold text-warn underline decoration-warn/50 underline-offset-2 hover:decoration-warn"
-          >
-            {activeRun.routeVersion.route.name}
-          </Link>
-          , started {when(activeRun.startedAt)} · {activeRun._count.deliveries} of{' '}
-          {activeRun.routeVersion._count.stops} stop
-          {activeRun.routeVersion._count.stops === 1 ? '' : 's'} recorded. No other route can start
-          until you finish or cancel it — cancelling keeps everything already recorded.
+          <p>
+            <strong className="font-semibold">You have a round in progress:</strong>{' '}
+            <Link
+              href={`/routes/${activeRun.routeVersion.routeId}/run`}
+              className="font-semibold text-warn underline decoration-warn/50 underline-offset-2 hover:decoration-warn"
+            >
+              {activeRun.routeVersion.route.name}
+            </Link>
+            , started {when(activeRun.startedAt)} · {activeRun._count.deliveries} of{' '}
+            {activeRun.routeVersion._count.stops} stop
+            {activeRun.routeVersion._count.stops === 1 ? '' : 's'} recorded. No other route can
+            start until you finish or stop it.
+          </p>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Link
+              href={`/routes/${activeRun.routeVersion.routeId}/run`}
+              className="btn inline-flex items-center rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-ink transition-colors hover:bg-accent-bright"
+            >
+              Continue this round
+            </Link>
+
+            {/* Ends the round in place. Nothing recorded is lost. */}
+            <form action={cancelRunAction}>
+              <input type="hidden" name="runId" value={activeRun.id} />
+              <input
+                type="hidden"
+                name="reason"
+                value="Stopped from the Routes list"
+              />
+              <Button variant="danger">Stop this round</Button>
+            </form>
+
+            <span className="text-xs text-ink-dim">
+              Stopping keeps every delivery already recorded.
+            </span>
+          </div>
         </Notice>
       )}
 

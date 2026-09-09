@@ -94,13 +94,36 @@ export async function startRunAction(_prev: RunState, formData: FormData): Promi
     };
   }
 
+  /*
+   * One run at a time, and say which one is in the way.
+   *
+   * This used to redirect straight to the open run. A driver who tapped Start
+   * on a newly built route was silently moved to a different route — often an
+   * old one with a single stop — and it read as "my route lost its stops".
+   * Naming the blocking round, and where it is, turns a dead end into an
+   * instruction.
+   */
   const existing = await db.routeRun.findFirst({
     where: { driverId: user.id, status: 'IN_PROGRESS' },
-    select: { id: true, routeVersion: { select: { routeId: true } } },
+    select: {
+      id: true,
+      routeVersion: { select: { routeId: true, route: { select: { name: true } } } },
+    },
   });
+
   if (existing) {
-    // Finishing the open run first keeps each run's history coherent.
-    redirect(`/routes/${existing.routeVersion.routeId}/run`);
+    /*
+     * No timestamp in this message on purpose. A Server Action formats dates in
+     * the *server's* timezone — UTC on Vercel — so a driver in IST would be told
+     * a time five and a half hours out. The banner on the run page carries the
+     * time instead, through the same formatter the rest of the console uses.
+     */
+    const sameRoute = existing.routeVersion.routeId === routeId;
+    return {
+      error: sameRoute
+        ? 'You already have a run in progress on this route. Scroll down to finish or cancel it.'
+        : `You still have a run in progress on “${existing.routeVersion.route.name}”. Finish or cancel that round first — the banner above links straight to it.`,
+    };
   }
 
   const here = position(formData);

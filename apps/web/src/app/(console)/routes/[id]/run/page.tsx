@@ -91,6 +91,31 @@ export default async function RunPage({
       })
     : null;
 
+  /*
+   * A round this driver left open on some *other* route.
+   *
+   * Only one run at a time is allowed, so an old unfinished round blocks every
+   * new one. Starting used to redirect silently into that old round, which read
+   * as "my new route lost its stops" — the driver landed on a different route,
+   * often an early one-stop attempt, and had no idea why.
+   *
+   * Surfaced here, before the button is pressed, with a way to go and close it.
+   */
+  const blockingRun = await db.routeRun.findFirst({
+    where: {
+      driverId: user.id,
+      status: 'IN_PROGRESS',
+      ...(version ? { NOT: { routeVersionId: version.id } } : {}),
+      routeVersion: { NOT: { routeId: route.id } },
+    },
+    orderBy: { startedAt: 'desc' },
+    select: {
+      startedAt: true,
+      routeVersion: { select: { routeId: true, route: { select: { name: true } } } },
+      _count: { select: { deliveries: true } },
+    },
+  });
+
   if (!version || version.stops.length === 0) {
     return (
       <>
@@ -226,6 +251,28 @@ export default async function RunPage({
         <Notice tone="warning">
           <strong className="font-semibold">Run cancelled.</strong> Anything you had already
           recorded is kept in Delivery history — cancelling does not erase it.
+        </Notice>
+      )}
+
+      {/* An unfinished round elsewhere blocks this one — say so before the
+          driver presses Start, and give them the way to close it. */}
+      {!activeRun && blockingRun && (
+        <Notice tone="warning">
+          <strong className="font-semibold">Finish your other round first.</strong> You still have
+          a run in progress on{' '}
+          <Link
+            href={`/routes/${blockingRun.routeVersion.routeId}/run`}
+            className="font-semibold text-warn underline decoration-warn/50 underline-offset-2 hover:decoration-warn"
+          >
+            {blockingRun.routeVersion.route.name}
+          </Link>
+          , started {when(blockingRun.startedAt)}
+          {blockingRun._count.deliveries > 0 &&
+            ` with ${blockingRun._count.deliveries} stop${
+              blockingRun._count.deliveries === 1 ? '' : 's'
+            } already recorded`}
+          . Open it and either finish it or cancel it — cancelling keeps everything already
+          recorded. Only one round can be running at a time, so this one cannot start until then.
         </Notice>
       )}
 

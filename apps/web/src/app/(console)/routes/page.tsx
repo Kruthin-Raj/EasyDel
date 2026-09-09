@@ -3,7 +3,7 @@ import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { routeWhere } from '@/lib/scope';
 import { reoptimizeRouteAction } from '@/lib/actions';
-import { PageHeader, Card, Table, Td, Badge, EmptyState, Button, when, duration, metres } from '@/components/ui';
+import { PageHeader, Card, Table, Td, Badge, EmptyState, Button, Notice, when, duration, metres } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,6 +31,30 @@ export default async function RoutesPage() {
       },
     },
     orderBy: { createdAt: 'desc' },
+  });
+
+  /*
+   * The round this driver currently has open, if any.
+   *
+   * Only one run may be in progress at a time, so an unfinished round silently
+   * blocks every new one. Until now the only place it appeared was that route's
+   * own run screen — so a driver who had forgotten about it had nowhere to look,
+   * and starting anything else just failed. This is that missing place.
+   */
+  const activeRun = await db.routeRun.findFirst({
+    where: { driverId: user.id, status: 'IN_PROGRESS' },
+    orderBy: { startedAt: 'desc' },
+    select: {
+      startedAt: true,
+      routeVersion: {
+        select: {
+          routeId: true,
+          route: { select: { name: true } },
+          _count: { select: { stops: true } },
+        },
+      },
+      _count: { select: { deliveries: true } },
+    },
   });
 
   return (
@@ -61,6 +85,23 @@ export default async function RoutesPage() {
           </>
         }
       />
+
+      {/* The one place a driver can always find the round they left open. */}
+      {activeRun && (
+        <Notice tone="warning">
+          <strong className="font-semibold">You have a round in progress:</strong>{' '}
+          <Link
+            href={`/routes/${activeRun.routeVersion.routeId}/run`}
+            className="font-semibold text-warn underline decoration-warn/50 underline-offset-2 hover:decoration-warn"
+          >
+            {activeRun.routeVersion.route.name}
+          </Link>
+          , started {when(activeRun.startedAt)} · {activeRun._count.deliveries} of{' '}
+          {activeRun.routeVersion._count.stops} stop
+          {activeRun.routeVersion._count.stops === 1 ? '' : 's'} recorded. No other route can start
+          until you finish or cancel it — cancelling keeps everything already recorded.
+        </Notice>
+      )}
 
       {routes.length === 0 ? (
         <Card>

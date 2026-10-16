@@ -1,7 +1,12 @@
 import { Module } from '@nestjs/common';
-import { SupabaseStrategyService } from './supabase-strategy.service.js';
+import { SupabaseStrategy } from './supabase-strategy.service.js';
+import { PrismaModule } from '../prisma/prisma.module.js';
+
+import { PassportModule } from '@nestjs/passport';
 
 @Module({
-  providers: [SupabaseStrategyService]
+  imports: [PrismaModule, PassportModule.register({ defaultStrategy: 'supabase' })],
+  providers: [SupabaseStrategy],
+  exports: [PassportModule]
 })
 export class AuthModule {}

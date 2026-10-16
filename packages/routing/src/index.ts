@@ -21,7 +21,11 @@ export interface RoutingProvider {
 }
 
 export class OSRMRoutingProvider implements RoutingProvider {
-  constructor(private baseUrl: string = process.env.OSRM_URL || 'http://router.project-osrm.org') {}
+  private baseUrl: string;
+
+  constructor(baseUrl: string = process.env.OSRM_URL || 'http://router.project-osrm.org') {
+    this.baseUrl = baseUrl;
+  }
 
   async optimizeRoute(
     startLocation: { lat: number; lng: number },
@@ -51,7 +55,7 @@ export class OSRMRoutingProvider implements RoutingProvider {
     }));
 
     return {
-      optimizedStops: optimizedStops.sort((a, b) => a.newIndex - b.newIndex),
+      optimizedStops: optimizedStops.sort((a: any, b: any) => a.newIndex - b.newIndex),
       totalDistance: trip.distance,
       estimatedDuration: trip.duration,
       geometry: trip.geometry,

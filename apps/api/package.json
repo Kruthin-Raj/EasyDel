@@ -25,6 +25,7 @@
     "@delivery/database": "workspace:*",
     "@delivery/routing": "workspace:*",
     "@nestjs/common": "^12.0.1",
+    "@nestjs/config": "^12.0.0",
     "@nestjs/core": "^12.0.1",
     "@nestjs/jwt": "^12.0.1",
     "@nestjs/passport": "^12.0.0",

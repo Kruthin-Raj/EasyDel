@@ -12,7 +12,14 @@ import { NextResponse, type NextRequest } from 'next/server';
  * (Named `proxy`, not `middleware` — that convention is deprecated in Next 16.)
  */
 
-const PUBLIC_PATHS = ['/login', '/signup', '/verify', '/forgot-password', '/reset-password'];
+const PUBLIC_PATHS = [
+  '/login',
+  '/signup',
+  '/verify',
+  '/forgot-password',
+  '/reset-password',
+  '/api/auth',
+];
 
 function isPublic(pathname: string) {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));

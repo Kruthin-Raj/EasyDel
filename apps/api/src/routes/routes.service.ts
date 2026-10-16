@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { CreateRouteDto } from './dto/create-route.dto';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { CreateRouteDto } from './dto/create-route.dto.js';
 import { OSRMRoutingProvider } from '@delivery/routing';
 import { RouteStatus } from '@delivery/database';
 

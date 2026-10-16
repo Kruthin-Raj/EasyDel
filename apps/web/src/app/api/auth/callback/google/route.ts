@@ -8,8 +8,20 @@ function getOrigin(request: NextRequest): string {
     return envUrl.replace(/\/$/, '');
   }
 
+  const vercelHost =
+    process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() || process.env.VERCEL_URL?.trim();
+  if (vercelHost) {
+    return `https://${vercelHost.replace(/\/$/, '')}`;
+  }
+
   const host = request.headers.get('x-forwarded-host') || request.headers.get('host');
-  const proto = request.headers.get('x-forwarded-proto') || 'http';
+  let proto = request.headers.get('x-forwarded-proto') || 'http';
+  if (proto.includes(',')) {
+    proto = proto.split(',')[0].trim();
+  }
+  if (host && !host.includes('localhost') && !host.includes('127.0.0.1')) {
+    proto = 'https';
+  }
   if (host) {
     return `${proto}://${host}`;
   }

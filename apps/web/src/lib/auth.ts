@@ -47,16 +47,25 @@ function readToken(token: string): string | null {
   return userId;
 }
 
-export async function createSession(userId: string) {
+export function buildSessionCookie(userId: string) {
   const payload = `${userId}|${Date.now() + SESSION_TTL_SECONDS * 1000}`;
+  return {
+    name: SESSION_COOKIE,
+    value: `${payload}.${sign(payload)}`,
+    options: {
+      httpOnly: true,
+      sameSite: 'lax' as const,
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: SESSION_TTL_SECONDS,
+    },
+  };
+}
+
+export async function createSession(userId: string) {
+  const { name, value, options } = buildSessionCookie(userId);
   const jar = await cookies();
-  jar.set(SESSION_COOKIE, `${payload}.${sign(payload)}`, {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-    path: '/',
-    maxAge: SESSION_TTL_SECONDS,
-  });
+  jar.set(name, value, options);
 }
 
 export async function destroySession() {

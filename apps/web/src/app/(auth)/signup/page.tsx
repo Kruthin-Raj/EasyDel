@@ -4,12 +4,28 @@ import { getSessionUser } from '@/lib/auth';
 import { signUpAction } from '@/lib/auth-actions';
 import ActionForm from '@/components/ActionForm';
 import { Field, Notice } from '@/components/ui';
+import GoogleSignInButton from '@/components/GoogleSignInButton';
 
 export const metadata = { title: 'Create account — EasyDel' };
 export const dynamic = 'force-dynamic';
 
-export default async function SignUpPage() {
+export default async function SignUpPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   if (await getSessionUser()) redirect('/');
+  const { error } = await searchParams;
+
+  const errorMessages: Record<string, string> = {
+    oauth_cancelled: 'Google sign-up was cancelled.',
+    oauth_state_mismatch: 'Security check failed or session expired. Please try again.',
+    oauth_not_configured: 'Google OAuth is not configured on the server yet.',
+    oauth_token_exchange_failed: 'Failed to verify Google credentials. Check redirect URI settings.',
+    oauth_network_error: 'Network connection issue while communicating with Google.',
+    oauth_no_email: 'Google did not provide a valid email address.',
+    oauth_database_error: 'Unable to update database for your account.',
+  };
 
   return (
     <>
@@ -17,9 +33,19 @@ export default async function SignUpPage() {
         <p className="eyebrow mb-3 text-accent">Create account</p>
         <h1 className="text-2xl font-semibold text-ink">Get started</h1>
         <p className="mt-1.5 text-sm text-ink-dim">
-          We&rsquo;ll email you a 6-digit code to confirm the address.
+          Create an account with Google or by email.
         </p>
       </div>
+
+      {error && (
+        <div className="mb-6">
+          <Notice tone="warning">
+            {errorMessages[error] || 'Google sign-up encountered an error. Please try again.'}
+          </Notice>
+        </div>
+      )}
+
+      <GoogleSignInButton text="Sign up with Google" />
 
       <ActionForm
         action={signUpAction}

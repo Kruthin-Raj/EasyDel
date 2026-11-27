@@ -15,9 +15,8 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   const user = await getSessionUser();
   if (!user) redirect('/login');
 
-  // Destinations this user can actually open. Resolved here, on the server,
-  // because it reads the Settings table.
-  const allowedNav = await allowedNavHrefs(user);
+  // Destinations this user can open.
+  const allowedNav = await allowedNavHrefs();
 
   // The responsive frame (static rail on desktop, drawer on mobile) lives in
   // ConsoleShell, which needs client-side state.

@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { db } from './db';
 import { requireCapability } from './permissions';
+import { allocateUniqueShareCode } from './route-sharing';
 import { splitLinks, parseMapLink, resolveShortLink, type ParsedLink } from './map-links';
 import { optimizeRoute, refineWithOsrm, haversine, isValidCoord, type Point } from './optimize';
 
@@ -111,7 +112,7 @@ export async function createRouteFromLinksAction(
     : { id: 'start', name: 'Start', lat: rows[0].lat, lng: rows[0].lng };
 
   const existing = await db.deliveryLocation.findMany({
-    where: { status: { in: ['ACTIVE', 'PAUSED'] } },
+    where: { createdById: user.id, status: { in: ['ACTIVE', 'PAUSED'] } },
     select: { id: true, latitude: true, longitude: true },
   });
 
@@ -140,6 +141,7 @@ export async function createRouteFromLinksAction(
         address: `${row.lat.toFixed(5)}, ${row.lng.toFixed(5)}`,
         latitude: row.lat,
         longitude: row.lng,
+        createdById: user.id,
       },
     });
     existing.push({ id: created.id, latitude: created.latitude, longitude: created.longitude });
@@ -182,17 +184,15 @@ export async function createRouteFromLinksAction(
     ),
   );
 
-  const driverProfile = await db.driverProfile.findUnique({ where: { userId: user.id } });
+  const shareCode = await allocateUniqueShareCode();
 
   const route = await db.route.create({
     data: {
       name: routeName,
+      shareCode,
       status: 'ACTIVE',
       createdById: user.id,
-      approvedById: user.role === 'ADMIN' ? user.id : null,
-      // Assign to the creator when they are a driver, so they can run it
-      // immediately without waiting for an admin.
-      driverId: driverProfile?.id ?? null,
+      approvedById: user.id,
     },
   });
 
@@ -272,14 +272,11 @@ export async function addLinksToRouteAction(
   const latest = route.versions[0];
   if (!latest) return { error: 'That route has no version to extend.' };
 
-  // Only the creator, the assigned driver or an admin may reshape a route.
-  const driverProfile = await db.driverProfile.findUnique({ where: { userId: user.id } });
-  const mayEdit =
-    user.role === 'ADMIN' ||
-    route.createdById === user.id ||
-    (route.driverId !== null && route.driverId === driverProfile?.id);
-  if (!mayEdit) {
-    return { error: 'You can only add stops to routes you created or are assigned to.' };
+  // Only the creator may reshape the canonical route; recipients can copy it first.
+  if (route.createdById !== user.id) {
+    return {
+      error: 'You can only add stops to routes you created. Make your own copy of a shared route first.',
+    };
   }
 
   const names = formData.getAll('stopName').map(String);
@@ -305,7 +302,7 @@ export async function addLinksToRouteAction(
   }
 
   const existing = await db.deliveryLocation.findMany({
-    where: { status: { in: ['ACTIVE', 'PAUSED'] } },
+    where: { createdById: user.id, status: { in: ['ACTIVE', 'PAUSED'] } },
     select: { id: true, latitude: true, longitude: true },
   });
 
@@ -337,6 +334,7 @@ export async function addLinksToRouteAction(
         address: `${row.lat.toFixed(5)}, ${row.lng.toFixed(5)}`,
         latitude: row.lat,
         longitude: row.lng,
+        createdById: user.id,
       },
     });
     existing.push({ id: created.id, latitude: created.latitude, longitude: created.longitude });

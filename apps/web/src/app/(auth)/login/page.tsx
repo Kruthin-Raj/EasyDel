@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { getSessionUser } from '@/lib/auth';
+import { getSessionUser, safeNextPath } from '@/lib/auth';
 import { loginAction } from '@/lib/auth-actions';
 import ActionForm from '@/components/ActionForm';
 import { Field, Notice } from '@/components/ui';
@@ -12,10 +12,11 @@ export const dynamic = 'force-dynamic';
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ reset?: string; error?: string }>;
+  searchParams: Promise<{ reset?: string; error?: string; next?: string }>;
 }) {
-  if (await getSessionUser()) redirect('/');
-  const { reset, error } = await searchParams;
+  const { reset, error, next: rawNext } = await searchParams;
+  const next = safeNextPath(rawNext);
+  if (await getSessionUser()) redirect(next);
 
   const errorMessages: Record<string, string> = {
     oauth_cancelled: 'Google sign-in was cancelled.',
@@ -33,7 +34,7 @@ export default async function LoginPage({
         <p className="eyebrow mb-3 text-accent">Sign in</p>
         <h1 className="text-2xl font-semibold text-ink">Welcome back</h1>
         <p className="mt-1.5 text-sm text-ink-dim">
-          Sign in to the dispatch console with Google or your email.
+          Sign in to open your routes, memorize stops, and deliver.
         </p>
       </div>
 
@@ -52,7 +53,7 @@ export default async function LoginPage({
         </div>
       )}
 
-      <GoogleSignInButton text="Sign in with Google" />
+      <GoogleSignInButton text="Sign in with Google" next={next} />
 
       <ActionForm
         action={loginAction}
@@ -60,6 +61,7 @@ export default async function LoginPage({
         pendingLabel="Signing in…"
         fullWidthSubmit
       >
+        <input type="hidden" name="next" value={next} />
         <Field
           label="Email"
           name="email"
@@ -91,7 +93,7 @@ export default async function LoginPage({
       <p className="mt-8 border-t border-line pt-6 text-sm text-ink-dim">
         Don&rsquo;t have an account?{' '}
         <Link
-          href="/signup"
+          href={next !== '/' ? `/signup?next=${encodeURIComponent(next)}` : '/signup'}
           className="font-medium text-accent underline decoration-accent/40 underline-offset-4 transition-colors hover:decoration-accent"
         >
           Create one

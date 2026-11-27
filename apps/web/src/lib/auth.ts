@@ -105,8 +105,13 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   // effect at once rather than when the cookie happens to expire.
   if (!user || !user.emailVerified) return null;
 
-  const { emailVerified: _ignored, ...session } = user;
-  return session as SessionUser;
+  return {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    firstName: user.firstName,
+    lastName: user.lastName,
+  };
 }
 
 /** Throws unless a verified session exists. */
@@ -116,20 +121,19 @@ export async function requireUser(): Promise<SessionUser> {
   return user;
 }
 
-/** Throws unless the caller is an ADMIN. */
-export async function requireAdmin(): Promise<SessionUser> {
-  const user = await requireUser();
-  if (user.role !== 'ADMIN') {
-    throw new Error('Forbidden — this action requires the ADMIN role.');
-  }
-  return user;
+/** Validates an internal redirect target so open-redirect URLs are rejected. */
+export function safeNextPath(raw: unknown): string {
+  if (typeof raw !== 'string') return '/';
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('/') || trimmed.startsWith('//')) return '/';
+  return trimmed;
 }
 
 /**
- * Role granted to someone who signs up through the public form.
+ * Default role value stored on the User row when signing up.
  *
- * DELIVERY_AGENT deliberately: signup is open, so this is what a stranger who
- * finds the URL receives. An ADMIN default would let them delete locations and
- * reassign routes. Change this only alongside restricting who may sign up.
+ * All users have equal permissions in the platform — there is no admin
+ * hierarchy. Kept only to satisfy the database column without a destructive
+ * schema change.
  */
 export const SELF_SIGNUP_ROLE = 'DELIVERY_AGENT' as const;

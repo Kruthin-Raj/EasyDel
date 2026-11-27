@@ -1,29 +1,27 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { db } from '@/lib/db';
-import { currentUserWith } from '@/lib/permissions';
-import Forbidden from '@/components/Forbidden';
+import { requireUser } from '@/lib/auth';
 import { updateLocationAction } from '@/lib/actions';
 import ActionForm from '@/components/ActionForm';
+import Forbidden from '@/components/Forbidden';
 import { PageHeader, Card, Field, TextArea } from '@/components/ui';
 
 export default async function EditLocationPage({ params }: { params: Promise<{ id: string }> }) {
-  const { user, can } = await currentUserWith(['edit_locations']);
+  const user = await requireUser();
   const { id } = await params;
-
-  if (!can.edit_locations) {
-    return (
-      <Forbidden
-        title="You can’t edit permanent locations"
-        reason="Editing a permanent delivery location is restricted."
-        role={user.role}
-        hint="An administrator can allow this under Settings → Delivery agent permissions."
-      />
-    );
-  }
 
   const location = await db.deliveryLocation.findUnique({ where: { id } });
   if (!location) notFound();
+
+  if (location.createdById !== user.id) {
+    return (
+      <Forbidden
+        title="You can only edit your own locations"
+        reason="Delivery locations belong strictly to the user who created them."
+        hint="Create or manage your own locations from Locations."
+      />
+    );
+  }
 
   return (
     <>

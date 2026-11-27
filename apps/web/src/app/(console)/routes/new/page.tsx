@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
-import { currentUserWith } from '@/lib/permissions';
-import Forbidden from '@/components/Forbidden';
+import { requireUser } from '@/lib/auth';
+import { locationWhere, ownedRouteWhere } from '@/lib/scope';
 import { createRouteAction } from '@/lib/actions';
 import ActionForm from '@/components/ActionForm';
 import RouteTemplateSelector from '@/components/RouteTemplateSelector';
@@ -14,31 +14,19 @@ export default async function NewRoutePage({
 }: {
   searchParams: Promise<{ baseRoute?: string }>;
 }) {
-  const { user, can } = await currentUserWith(['create_routes']);
+  const user = await requireUser();
   const { baseRoute: baseRouteId } = await searchParams;
 
-  if (!can.create_routes) {
-    return (
-      <Forbidden
-        title="Route creation is turned off for delivery agents"
-        reason="An administrator has disabled route creation for your role. They can re-enable it under Settings → Delivery agent permissions."
-        role={user.role}
-        hint="You can still record a route by driving it — that does not need this permission."
-      />
-    );
-  }
-
-  // Only deliverable locations are offered: ACTIVE, and with at least one
-  // ACTIVE subscription. This is the spec's core rule — a building drops out
-  // of route generation only once nothing is left to deliver there.
-  const [deliverable, drivers, existingRoutes] = await Promise.all([
+  // Only deliverable locations created by this user are offered: ACTIVE, and
+  // with at least one ACTIVE subscription.
+  const [deliverable, existingRoutes] = await Promise.all([
     db.deliveryLocation.findMany({
-      where: { status: 'ACTIVE', subscriptions: { some: { status: 'ACTIVE' } } },
+      where: { ...locationWhere(user), status: 'ACTIVE', subscriptions: { some: { status: 'ACTIVE' } } },
       include: { subscriptions: { where: { status: 'ACTIVE' } } },
       orderBy: { name: 'asc' },
     }),
-    db.driverProfile.findMany({ where: { active: true }, include: { user: true } }),
     db.route.findMany({
+      where: ownedRouteWhere(user),
       orderBy: { name: 'asc' },
       include: {
         versions: {
@@ -133,21 +121,6 @@ export default async function NewRoutePage({
                     Ignored while &ldquo;Return to start&rdquo; is ticked.
                   </p>
                 </fieldset>
-
-                <label className="block">
-                  <span className="text-sm font-medium text-ink">Assign driver</span>
-                  <select
-                    name="driverId"
-                    className="field mt-1.5"
-                  >
-                    <option value="">Unassigned</option>
-                    {drivers.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.user.firstName} {d.user.lastName}
-                      </option>
-                    ))}
-                  </select>
-                </label>
 
                 <fieldset>
                   <div className="mb-2 flex items-center justify-between">

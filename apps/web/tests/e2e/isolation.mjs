@@ -1,19 +1,11 @@
 /**
- * Tenant isolation: one delivery agent must not see another's work.
+ * Tenant isolation + route sharing: one person's personal delivery history
+ * remains private even when they share a route by code/link for someone else
+ * to memorize and deliver.
  *
  *   node tests/e2e/isolation.mjs <deliveryId>
  *
  * The deliveryId comes from `test-fixtures.mjs setup` and belongs to agent A.
- *
- * This exists because every console page used to check only that *someone* was
- * signed in and then query globally. An agent's Delivery history listed every
- * other agent's deliveries — customer names and street addresses included —
- * and the dashboard showed the whole fleet's figures. The fix is `lib/scope.ts`;
- * this is the proof it holds.
- *
- * Assertions are deliberately about absence. A page that fails to load also
- * "contains none of A's data", so each section also asserts that the agent can
- * still see their own work — otherwise a broken page would pass.
  */
 
 import { loadEnv, createChecker, launch, signIn, mainText, BASE, TAG } from './lib.mjs';
@@ -31,18 +23,17 @@ const browser = await launch();
 
 const A = `${TAG}-a@easydel.invalid`;
 const B = `${TAG}-b@easydel.invalid`;
-const ADMIN = `${TAG}-admin@easydel.invalid`;
 
 // --------------------------------------------------------------- agent A ---
-console.log('\nAgent A — owns the data (control group)\n');
+console.log('\nUser A — owns the data (control group)\n');
 const a = await signIn(browser, A, password);
 await a.goto(`${BASE}/delivery-history`, { waitUntil: 'networkidle' });
 const aText = (await a.locator('body').innerText()).toLowerCase();
 check('A sees their own delivery', aText.includes(`${TAG} secret house`));
-check("A sees their own issue", aText.includes("private issue note"));
+check('A sees their own issue', aText.includes('private issue note'));
 
 // --------------------------------------------------------------- agent B ---
-console.log('\nAgent B — must see none of it\n');
+console.log('\nUser B — private history stays isolated, sharing works via code\n');
 const b = await signIn(browser, B, password);
 
 await b.goto(`${BASE}/delivery-history`, { waitUntil: 'networkidle' });
@@ -52,7 +43,7 @@ check("B does NOT see A's customer", !bHistory.includes('mr confidential'));
 check("B does NOT see A's address", !bHistory.includes('42 private lane'));
 check("B does NOT see A's issue", !bHistory.includes('private issue note'));
 
-// The URL is guessable, so the detail page must refuse rather than render.
+// Guessable delivery detail URL must refuse rather than render.
 await b.goto(`${BASE}/delivery-history/${DELIVERY_ID}`, { waitUntil: 'networkidle' });
 const bDetail = (await b.locator('body').innerText()).toLowerCase();
 check(
@@ -63,55 +54,56 @@ check("B's refusal page leaks no address", !bDetail.includes('42 private lane'))
 
 await b.goto(`${BASE}/`, { waitUntil: 'networkidle' });
 const bDash = await mainText(b);
-check('B dashboard hides fleet headcount', !bDash.includes('total drivers'));
-check('B dashboard hides active-driver count', !bDash.includes('active drivers'));
-check('B dashboard is framed as their own', bDash.includes('my routes today'));
+check('dashboard has no admin driver headcount', !bDash.includes('total drivers'));
+check('dashboard offers join by code', bDash.includes('open a shared route'));
 check("B dashboard shows no trace of A's house", !bDash.includes(`${TAG} secret house`));
 
-// Positive control: B must still see B's work, or the checks above are vacuous.
+// Positive control: B sees B's own work, and never A's private locations.
 await b.goto(`${BASE}/routes`, { waitUntil: 'networkidle' });
 check("B sees B's own route", (await mainText(b)).includes("b's round"));
 
-// ------------------------------------------- hidden nav, and the crash ---
-console.log('\nNavigation hides what an agent cannot open\n');
+await b.goto(`${BASE}/locations?status=ALL`, { waitUntil: 'networkidle' });
+const bLocations = await mainText(b);
+check("B does NOT see A's location in Locations", !bLocations.includes(`${TAG} secret house`));
+check("B does NOT see A's address in Locations", !bLocations.includes('42 private lane'));
+
+await b.goto(`${BASE}/routes/new`, { waitUntil: 'networkidle' });
+check("B does NOT see A's location when creating a route", !(await mainText(b)).includes(`${TAG} secret house`));
+
+// ------------------------------------------- nav + peer-to-peer sharing ---
+console.log('\nNavigation has no admin pages; route sharing & memorize work\n');
 await b.goto(`${BASE}/`, { waitUntil: 'networkidle' });
 await b.getByRole('button', { name: 'Open navigation' }).click();
 await b.waitForTimeout(400);
 const nav = await b.locator('nav[aria-label="Main"]').last().innerText();
-check('nav hides Drivers', !nav.includes('Drivers'));
-check('nav hides Mentors', !nav.includes('Mentors'));
-check('nav hides Reports', !nav.includes('Reports'));
-check('nav still offers Routes', nav.includes('Routes'));
-check('nav still offers Record a route', nav.includes('Record a route'));
+check('nav has no Drivers admin page', !nav.includes('Drivers'));
+check('nav has no Mentors admin page', !nav.includes('Mentors'));
+check('nav offers My routes', nav.includes('My routes'));
+check('nav offers Join by code', nav.includes('Join by code'));
+check('nav offers Record a route', nav.includes('Record a route'));
+check('nav offers Reports', nav.includes('Reports'));
 
-// Typing the URL must refuse cleanly. Pressing Deactivate on this page used to
-// throw an unhandled ADMIN-only error and render Next's error screen.
+// Legacy /drivers redirects cleanly to /routes.
 await b.goto(`${BASE}/drivers`, { waitUntil: 'networkidle' });
-const drivers = (await b.locator('body').innerText()).toLowerCase();
-check(
-  'typed /drivers refuses cleanly, no crash',
-  drivers.includes('administrator') && !drivers.includes('application error'),
-);
-check('/drivers leaks no driver emails', !drivers.includes('@easydel.invalid'));
+check('legacy /drivers redirects to /routes', b.url().endsWith('/routes'));
 
-await b.goto(`${BASE}/reports`, { waitUntil: 'networkidle' });
-const reports = (await b.locator('body').innerText()).toLowerCase();
-check(
-  'typed /reports refuses cleanly',
-  reports.includes('whole operation') || reports.includes('permission required'),
-);
+// B can join A's route by share code E2EROUTA, save it, and memorize it.
+await b.goto(`${BASE}/share/E2EROUTA`, { waitUntil: 'networkidle' });
+const shareText = await mainText(b);
+check('share page loads by code', shareText.includes("a's round"));
+const saveBtn = b.getByRole('button', { name: /Save to my routes/i });
+if (await saveBtn.count()) {
+  await saveBtn.first().click();
+  await b.waitForURL(/\/routes\/[0-9a-f-]{36}/, { timeout: 30000 });
+}
+check('saving shared route lands on route page', /\/routes\/[0-9a-f-]{36}/.test(b.url()));
 
-// ----------------------------------------------------------------- admin ---
-console.log('\nAdmin still sees everything\n');
-const admin = await signIn(browser, ADMIN, password);
-await admin.goto(`${BASE}/delivery-history`, { waitUntil: 'networkidle' });
-check(
-  "admin sees A's delivery",
-  (await admin.locator('body').innerText()).toLowerCase().includes(`${TAG} secret house`),
-);
-await admin.goto(`${BASE}/`, { waitUntil: 'networkidle' });
-const adminDash = await mainText(admin);
-check('admin keeps fleet headcount', adminDash.includes('total drivers'));
-check('admin keeps the audit trail', adminDash.includes('audit trail'));
+await b.getByRole('link', { name: /Memorize route/i }).first().click();
+await b.waitForURL(/\/memorize/, { timeout: 30000 });
+check('memorize mode loads for saved route', (await mainText(b)).includes('memorization progress'));
+
+// Even after saving A's route, B still sees none of A's past deliveries.
+await b.goto(`${BASE}/delivery-history`, { waitUntil: 'networkidle' });
+check("B still does NOT see A's past deliveries", !(await mainText(b)).includes(`${TAG} secret house`));
 
 await finish(browser);

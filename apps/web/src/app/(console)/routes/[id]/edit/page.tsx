@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { db } from '@/lib/db';
-import { currentUserWith } from '@/lib/permissions';
+import { requireUser } from '@/lib/auth';
+import { locationWhere } from '@/lib/scope';
 import {
   addStopByLinkAction,
   addStopFromLocationAction,
@@ -18,14 +19,13 @@ import { PageHeader, Card, Badge, MetricStrip, metres, duration } from '@/compon
 export const dynamic = 'force-dynamic';
 
 export default async function EditRoutePage({ params }: { params: Promise<{ id: string }> }) {
-  const { user, can } = await currentUserWith(['create_routes']);
+  const user = await requireUser();
   const { id } = await params;
 
   const route = await db.route.findUnique({
     where: { id },
     include: {
       createdBy: true,
-      driver: true,
       versions: {
         orderBy: { versionNumber: 'desc' },
         take: 1,
@@ -45,20 +45,12 @@ export default async function EditRoutePage({ params }: { params: Promise<{ id: 
 
   if (!route) notFound();
 
-  const driverProfile = await db.driverProfile.findUnique({ where: { userId: user.id } });
-  const mayEdit =
-    user.role === 'ADMIN' ||
-    can.create_routes ||
-    route.createdById === user.id ||
-    (route.driverId !== null && route.driverId === driverProfile?.id);
-
-  if (!mayEdit) {
+  if (route.createdById !== user.id) {
     return (
       <Forbidden
-        title="You can’t edit this route"
-        reason="Routes can only be changed by the person who created them, the driver they are assigned to, or an administrator."
-        role={user.role}
-        hint="You can still run a route that is assigned to you."
+        title="Only the creator can edit this route"
+        reason="This route was shared with you. Editing the original would change stops for everyone else using the same share code."
+        hint="Open the route details page and click “Make my own editable copy” to customise your own version."
       />
     );
   }
@@ -66,10 +58,10 @@ export default async function EditRoutePage({ params }: { params: Promise<{ id: 
   const latest = route.versions[0];
   const onRoute = new Set(latest?.stops.map((s) => s.deliveryLocationId) ?? []);
 
-  // Saved checkpoints that could be added — anything active and not already on
-  // this route. Capped because this fills a dropdown.
+  // Saved checkpoints that could be added — only this user's own active
+  // locations not already on this route. Capped because this fills a dropdown.
   const available = await db.deliveryLocation.findMany({
-    where: { status: 'ACTIVE', id: { notIn: [...onRoute] } },
+    where: { ...locationWhere(user), status: 'ACTIVE', id: { notIn: [...onRoute] } },
     select: { id: true, name: true, address: true },
     orderBy: { name: 'asc' },
     take: 200,

@@ -1,37 +1,24 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
-import { deliveryWhere, issueWhere, routeWhere, trainingWhere, seesAllData } from '@/lib/scope';
-import { PageHeader, StatCard, Card, Table, Td, Badge, EmptyState, when, metres } from '@/components/ui';
+import { deliveryWhere, issueWhere, routeWhere, trainingWhere } from '@/lib/scope';
+import JoinRouteForm from '@/components/JoinRouteForm';
+import { PageHeader, StatCard, Card, Table, Td, Badge, EmptyState, when } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
   const user = await requireUser();
 
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
   const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000);
 
-  /*
-   * Every figure below was counted across the whole database, so an agent's
-   * dashboard showed the fleet's delivery totals, other agents' customers in
-   * "Recent deliveries", and everyone's actions in the audit trail.
-   *
-   * Supervisors keep the operation-wide view. For an agent each query is
-   * narrowed to their own work, and the tiles that only make sense fleet-wide
-   * (driver headcount, cross-team audit) are not rendered at all.
-   */
-  const supervisor = seesAllData(user);
   const dScope = deliveryWhere(user);
   const iScope = issueWhere(user);
   const rScope = await routeWhere(user);
   const tScope = trainingWhere(user);
 
   const [
-    totalDrivers,
-    activeDrivers,
-    routesToday,
+    myRoutesCount,
     delivered,
     pending,
     failed,
@@ -42,9 +29,7 @@ export default async function DashboardPage() {
     recentDeliveries,
     recentAudit,
   ] = await Promise.all([
-    supervisor ? db.driverProfile.count() : Promise.resolve(0),
-    supervisor ? db.driverProfile.count({ where: { active: true } }) : Promise.resolve(0),
-    db.route.count({ where: { ...rScope, createdAt: { gte: startOfDay } } }),
+    db.route.count({ where: { ...rScope, status: { not: 'ARCHIVED' } } }),
     db.delivery.count({ where: { ...dScope, status: 'DELIVERED' } }),
     db.delivery.count({ where: { ...dScope, status: { in: ['PENDING', 'IN_PROGRESS'] } } }),
     db.delivery.count({ where: { ...dScope, status: 'FAILED' } }),
@@ -53,7 +38,7 @@ export default async function DashboardPage() {
     db.gPSPoint.findMany({
       where: {
         timestamp: { gte: fifteenMinAgo },
-        ...(supervisor ? {} : { userId: user.id }),
+        userId: user.id,
       },
       select: { userId: true },
       distinct: ['userId'],
@@ -66,7 +51,7 @@ export default async function DashboardPage() {
       include: { subscription: { include: { deliveryLocation: true } } },
     }),
     db.auditLog.findMany({
-      where: supervisor ? {} : { userId: user.id },
+      where: { userId: user.id },
       take: 6,
       orderBy: { timestamp: 'desc' },
       include: { user: true },
@@ -77,40 +62,51 @@ export default async function DashboardPage() {
     <>
       <PageHeader
         title={`Welcome back, ${user.firstName}`}
-        subtitle="Live overview of drivers, routes and deliveries."
+        subtitle="Create routes, share them by code or link, memorize every stop, and record deliveries."
         actions={
-          <Link
-            href="/routes/new"
-            className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-ink transition-colors hover:bg-accent-bright"
-          >
-            New route
-          </Link>
+          <>
+            <Link
+              href="/routes/from-links"
+              className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-ink transition-colors hover:bg-accent-bright"
+            >
+              Route from links
+            </Link>
+            <Link
+              href="/record"
+              className="rounded-lg bg-surface-2 px-3 py-2 text-sm font-medium text-ink ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2"
+            >
+              Record by driving
+            </Link>
+            <Link
+              href="/routes/new"
+              className="rounded-lg bg-surface-2 px-3 py-2 text-sm font-medium text-ink ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2"
+            >
+              From saved locations
+            </Link>
+          </>
         }
       />
 
+      <JoinRouteForm />
+
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {supervisor && (
-          <>
-            <StatCard label="Total drivers" value={totalDrivers} />
-            <StatCard label="Active drivers" value={activeDrivers} tone="positive" />
-          </>
-        )}
         <StatCard
-          label={supervisor ? 'Routes today' : 'My routes today'}
-          value={routesToday}
+          label="My routes"
+          value={myRoutesCount}
+          hint="Created & saved routes"
           tone="info"
-        />
-        <StatCard
-          label={supervisor ? 'Active GPS sessions' : 'My GPS tracking'}
-          value={activeGpsUsers.length}
-          hint="Reported in the last 15 min"
-          tone={activeGpsUsers.length > 0 ? 'positive' : 'neutral'}
         />
         <StatCard label="Delivered" value={delivered} tone="positive" />
         <StatCard label="Pending" value={pending} tone="warning" />
         <StatCard label="Failed" value={failed} tone={failed > 0 ? 'critical' : 'neutral'} />
         <StatCard label="Skipped" value={skipped} />
-        <StatCard label="Training sessions" value={trainingSessions} />
+        <StatCard label="Recorded rounds" value={trainingSessions} />
+        <StatCard
+          label="My GPS tracking"
+          value={activeGpsUsers.length}
+          hint="Reported in the last 15 min"
+          tone={activeGpsUsers.length > 0 ? 'positive' : 'neutral'}
+        />
         <StatCard
           label="Open issues"
           value={openIssues}
@@ -120,11 +116,11 @@ export default async function DashboardPage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card
-          title={supervisor ? 'Recent deliveries' : 'Your recent deliveries'}
+          title="Your recent deliveries"
           description="Most recently updated first."
         >
           {recentDeliveries.length === 0 ? (
-            <EmptyState message="No deliveries recorded yet." hint="Create a route and mark stops delivered." />
+            <EmptyState message="No deliveries recorded yet." hint="Open a route and mark stops delivered." />
           ) : (
             <Table head={['Location', 'Customer', 'Qty', 'Status', 'When']}>
               {recentDeliveries.map((d) => (
@@ -145,15 +141,11 @@ export default async function DashboardPage() {
         </Card>
 
         <Card
-          title={supervisor ? 'Audit trail' : 'Your recent activity'}
-          description={
-            supervisor
-              ? 'Recent changes to locations, routes and settings.'
-              : 'Changes you have made to locations, routes and settings.'
-          }
+          title="Your recent activity"
+          description="Changes you have made to locations, routes and settings."
         >
           {recentAudit.length === 0 ? (
-            <EmptyState message="No audit events yet." />
+            <EmptyState message="No activity yet." />
           ) : (
             <ul className="divide-y divide-line/70">
               {recentAudit.map((a) => (
@@ -168,53 +160,12 @@ export default async function DashboardPage() {
                     {a.newValue ?? a.entityType}
                     {a.reason ? ` — ${a.reason}` : ''}
                   </p>
-                  <p className="mt-0.5 text-xs text-ink-faint">
-                    by {a.user.firstName} {a.user.lastName}
-                  </p>
                 </li>
               ))}
             </ul>
           )}
         </Card>
       </div>
-
-      {supervisor && (
-        <Card
-          title="Reports"
-          description="Distance and duration totals across all recorded route versions."
-        >
-          <RouteTotals />
-        </Card>
-      )}
     </>
-  );
-}
-
-async function RouteTotals() {
-  const agg = await db.routeVersion.aggregate({
-    _sum: { totalDistance: true, estimatedDuration: true },
-    _count: true,
-  });
-  const stops = await db.routeStop.count();
-
-  return (
-    <div className="grid grid-cols-2 gap-px bg-line lg:grid-cols-4">
-      {[
-        { label: 'Route versions', value: agg._count },
-        { label: 'Total stops', value: stops },
-        { label: 'Total distance', value: metres(agg._sum.totalDistance) },
-        {
-          label: 'Planned duration',
-          value: agg._sum.estimatedDuration
-            ? `${Math.round(agg._sum.estimatedDuration / 60)} min`
-            : '—',
-        },
-      ].map((s) => (
-        <div key={s.label} className="bg-panel px-5 py-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-ink-dim">{s.label}</p>
-          <p className="mt-1 text-xl font-semibold tabular-nums text-ink">{s.value}</p>
-        </div>
-      ))}
-    </div>
   );
 }

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { buildSessionCookie, SELF_SIGNUP_ROLE } from '@/lib/auth';
+import { buildSessionCookie, safeNextPath, SELF_SIGNUP_ROLE } from '@/lib/auth';
 
 function getOrigin(request: NextRequest): string {
   const envUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
@@ -157,10 +157,12 @@ export async function GET(request: NextRequest) {
     }
 
     const session = buildSessionCookie(userId);
-    const destination = new URL('/', origin);
+    const nextPath = safeNextPath(request.cookies.get('oauth_next')?.value);
+    const destination = new URL(nextPath, origin);
     const response = NextResponse.redirect(destination);
     response.cookies.set(session.name, session.value, session.options);
     response.cookies.delete('oauth_state');
+    response.cookies.delete('oauth_next');
     return response;
   } catch (err) {
     console.error('[Google OAuth] Database error:', err);

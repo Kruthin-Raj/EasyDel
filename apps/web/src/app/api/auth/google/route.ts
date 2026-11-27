@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import crypto from 'node:crypto';
+import { safeNextPath } from '@/lib/auth';
 
 function getOrigin(request: NextRequest): string {
   const envUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
@@ -36,6 +37,7 @@ export async function GET(request: NextRequest) {
   authUrl.searchParams.set('state', state);
   authUrl.searchParams.set('prompt', 'select_account');
 
+  const next = safeNextPath(request.nextUrl.searchParams.get('next'));
   const response = NextResponse.redirect(authUrl.toString());
   response.cookies.set('oauth_state', state, {
     httpOnly: true,
@@ -44,6 +46,15 @@ export async function GET(request: NextRequest) {
     path: '/',
     maxAge: 60 * 10, // 10 minutes
   });
+  if (next !== '/') {
+    response.cookies.set('oauth_next', next, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: 60 * 10,
+    });
+  }
 
   return response;
 }

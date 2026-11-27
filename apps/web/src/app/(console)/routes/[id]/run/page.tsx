@@ -2,8 +2,8 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
-import { loadSettings } from '@/lib/permissions';
-import { seesAllData } from '@/lib/scope';
+import { loadSettings, parseGeofenceMetres } from '@/lib/permissions';
+import { canAccessRoute } from '@/lib/route-sharing';
 import Forbidden from '@/components/Forbidden';
 import { signedPhotoUrl } from '@/lib/storage';
 import { startRunAction } from '@/lib/run-actions';
@@ -27,7 +27,7 @@ export default async function RunPage({
   const route = await db.route.findUnique({
     where: { id },
     include: {
-      driver: { include: { user: true } },
+      createdBy: { select: { firstName: true, lastName: true } },
       versions: {
         orderBy: { versionNumber: 'desc' },
         take: 1,
@@ -47,26 +47,14 @@ export default async function RunPage({
 
   if (!route) notFound();
 
-  /*
-   * Whose route this is.
-   *
-   * The page had no ownership check at all — only startRunAction did — so
-   * anyone signed in could open another driver's run screen by URL and read
-   * their stops, addresses and customers. Mirrors the rule in startRunAction,
-   * so what you can open is what you can start.
-   */
-  const canRun =
-    seesAllData(user) ||
-    route.createdById === user.id ||
-    (route.driver !== null && route.driver.userId === user.id);
+  const canRun = await canAccessRoute(user.id, route.id);
 
   if (!canRun) {
     return (
       <Forbidden
-        title="This round is not yours"
-        reason="You can only run routes you created or that are assigned to you."
-        role={user.role}
-        hint="Your own routes are listed under Routes."
+        title="Save this route before running it"
+        reason="You can deliver on routes you created or saved using a share code or link."
+        hint="Ask the creator for the route code or link, then open Join by code."
       />
     );
   }
@@ -74,7 +62,7 @@ export default async function RunPage({
   const version = route.versions[0];
 
   const settings = await loadSettings();
-  const geofence = Number(settings.delivery_geofence_metres) || 150;
+  const geofence = parseGeofenceMetres(settings, user.id);
 
   // The run in progress for this driver on this version, if any.
   const activeRun = version
@@ -85,7 +73,7 @@ export default async function RunPage({
 
   const lastRun = version
     ? await db.routeRun.findFirst({
-        where: { routeVersionId: version.id, status: 'COMPLETED' },
+        where: { routeVersionId: version.id, driverId: user.id, status: 'COMPLETED' },
         orderBy: { startedAt: 'desc' },
         include: { _count: { select: { deliveries: true } } },
       })
@@ -231,12 +219,20 @@ export default async function RunPage({
             : 'Start the run when you set off.'
         }
         actions={
-          <Link
-            href={`/routes/${route.id}`}
-            className="rounded-lg bg-surface-2 px-3 py-2 text-sm font-medium text-ink ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2"
-          >
-            Route details
-          </Link>
+          <>
+            <Link
+              href={`/routes/${route.id}/memorize`}
+              className="rounded-lg bg-surface-2 px-3 py-2 text-sm font-medium text-ink ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2"
+            >
+              Memorize first
+            </Link>
+            <Link
+              href={`/routes/${route.id}`}
+              className="rounded-lg bg-surface-2 px-3 py-2 text-sm font-medium text-ink ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2"
+            >
+              Route details
+            </Link>
+          </>
         }
       />
 
@@ -306,10 +302,8 @@ export default async function RunPage({
                 <StartRunForm action={startRunAction} routeId={route.id} />
                 <p className="mt-4 text-xs text-ink-dim">
                   {route.createdById === user.id
-                    ? 'This is your route — you can start it whenever you like.'
-                    : route.driver
-                      ? `Assigned to ${route.driver.user.firstName} ${route.driver.user.lastName}.`
-                      : 'Unassigned, so any driver can run it.'}{' '}
+                    ? 'You created this route — start whenever you are ready.'
+                    : `Saved from ${route.createdBy.firstName} ${route.createdBy.lastName}. Your run and delivery history stay private to you.`}{' '}
                   Deliveries can be marked up to {geofence} m from each stop without confirming.
                 </p>
               </div>

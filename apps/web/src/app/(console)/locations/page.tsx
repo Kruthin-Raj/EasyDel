@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
+import { locationWhere } from '@/lib/scope';
 import { setLocationStatusAction } from '@/lib/actions';
 import { PageHeader, Card, Table, Td, Badge, EmptyState, Button, when } from '@/components/ui';
 
@@ -23,11 +24,12 @@ export default async function LocationsPage({
 }: {
   searchParams: Promise<{ q?: string; status?: string }>;
 }) {
-  await requireUser();
+  const user = await requireUser();
   const { q = '', status = 'ACTIVE' } = await searchParams;
 
   const locations = await db.deliveryLocation.findMany({
     where: {
+      ...locationWhere(user),
       ...(status !== 'ALL' ? { status: status as never } : {}),
       ...(q
         ? {
@@ -234,7 +236,7 @@ function LifecycleActions({ id, status }: { id: string; status: string }) {
         <form action={setLocationStatusAction}>
           <input type="hidden" name="id" value={id} />
           <input type="hidden" name="status" value="ACTIVE" />
-          <input type="hidden" name="reason" value="Restored by admin" />
+          <input type="hidden" name="reason" value="Restored" />
           <Button variant="secondary" className="px-2 py-1 text-xs">
             Restore
           </Button>
@@ -245,7 +247,7 @@ function LifecycleActions({ id, status }: { id: string; status: string }) {
         <form action={setLocationStatusAction}>
           <input type="hidden" name="id" value={id} />
           <input type="hidden" name="status" value="ARCHIVED" />
-          <input type="hidden" name="reason" value="Archived by admin" />
+          <input type="hidden" name="reason" value="Archived" />
           <Button variant="ghost" className="px-2 py-1 text-xs">
             Archive
           </Button>

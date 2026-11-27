@@ -1,27 +1,15 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
-import { currentUserWith } from '@/lib/permissions';
+import { requireUser } from '@/lib/auth';
 import { startRecordingAction } from '@/lib/recording-actions';
 import StartRecordingForm from '@/components/StartRecordingForm';
-import Forbidden from '@/components/Forbidden';
 import { PageHeader, Card, Table, Td, Badge, EmptyState, Notice, when, metres, duration } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Record a route — EasyDel' };
 
 export default async function RecordPage() {
-  const { user, can } = await currentUserWith(['create_training_routes']);
-
-  if (!can.create_training_routes) {
-    return (
-      <Forbidden
-        title="Recording routes is turned off for your role"
-        reason="An administrator has disabled route recording for delivery agents."
-        role={user.role}
-        hint="They can re-enable it under Settings → Delivery agent permissions."
-      />
-    );
-  }
+  const user = await requireUser();
 
   const [active, past] = await Promise.all([
     db.trainingSession.findFirst({

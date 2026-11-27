@@ -2,8 +2,12 @@ import Link from 'next/link';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { routeWhere } from '@/lib/scope';
+import { ensureRouteShareCode } from '@/lib/route-sharing';
 import { reoptimizeRouteAction } from '@/lib/actions';
+import { unsaveRouteAction } from '@/lib/share-actions';
 import { cancelRunAction } from '@/lib/run-actions';
+import JoinRouteForm from '@/components/JoinRouteForm';
+import ShareRouteCard from '@/components/ShareRouteCard';
 import { PageHeader, Card, Table, Td, Badge, EmptyState, Button, Notice, when, duration, metres } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
@@ -11,18 +15,10 @@ export const dynamic = 'force-dynamic';
 export default async function RoutesPage() {
   const user = await requireUser();
 
-  /*
-   * Routes an agent created themselves used to be missing from this list: the
-   * filter matched only `driver.userId`, so anything they built but were not
-   * formally assigned to was invisible. routeWhere covers created-by,
-   * assigned-to and unclaimed, which is also what the run page already allows
-   * an agent to start.
-   */
-  const routes = await db.route.findMany({
+  const rawRoutes = await db.route.findMany({
     where: await routeWhere(user),
     include: {
       createdBy: true,
-      driver: { include: { user: true } },
       versions: {
         orderBy: { versionNumber: 'desc' },
         include: {
@@ -33,6 +29,14 @@ export default async function RoutesPage() {
     },
     orderBy: { createdAt: 'desc' },
   });
+
+  // Guarantee every route shown has a share code & link (backfilling any legacy rows).
+  const routes = await Promise.all(
+    rawRoutes.map(async (r) => ({
+      ...r,
+      shareCode: r.shareCode ?? (await ensureRouteShareCode(r.id)),
+    })),
+  );
 
   /*
    * The round this driver currently has open, if any.
@@ -62,8 +66,8 @@ export default async function RoutesPage() {
   return (
     <>
       <PageHeader
-        title="Delivery routes"
-        subtitle="Each change creates a new version, so historical routes stay intact."
+        title="My routes"
+        subtitle="Create routes in any way, share them with a unique code or link, memorize the stops, and deliver."
         actions={
           <>
             <Link
@@ -87,6 +91,8 @@ export default async function RoutesPage() {
           </>
         }
       />
+
+      <JoinRouteForm />
 
       {/*
         The one place a driver can always find — and end — the round they left
@@ -138,13 +144,17 @@ export default async function RoutesPage() {
 
       {routes.length === 0 ? (
         <Card>
-          <EmptyState message="No routes yet." hint="Create one from your active locations." />
+          <EmptyState
+            message="No routes in your list yet."
+            hint="Create a route above, or paste someone's share code or link to save theirs."
+          />
         </Card>
       ) : (
         <Card>
-          <Table head={['Route', 'Driver', 'Latest version', 'Stops', 'Distance', 'Status', '']}>
+          <Table head={['Route', 'Share code', 'Stops', 'Distance', 'Status', '']}>
             {routes.map((r) => {
               const latest = r.versions[0];
+              const isOwner = r.createdById === user.id;
               // A stop whose location is no longer ACTIVE means the route is stale.
               const stale =
                 latest?.stops.some((s) => s.deliveryLocation.status !== 'ACTIVE') ?? false;
@@ -158,7 +168,13 @@ export default async function RoutesPage() {
                       {r.name}
                     </Link>
                     <p className="text-xs text-ink-dim">
-                      by {r.createdBy.firstName} {r.createdBy.lastName} · {when(r.createdAt)}
+                      {isOwner
+                        ? `Created by you · ${when(r.createdAt)}`
+                        : `Saved · by ${r.createdBy.firstName} ${r.createdBy.lastName}`}
+                    </p>
+                    <p className="text-xs text-ink-faint">
+                      v{latest?.versionNumber ?? '—'} ({r.versions.length} version
+                      {r.versions.length === 1 ? '' : 's'})
                     </p>
                     {stale && (
                       <p className="mt-1 text-xs font-medium text-warn">
@@ -166,16 +182,18 @@ export default async function RoutesPage() {
                       </p>
                     )}
                   </Td>
-                  <Td className="text-ink">
-                    {r.driver ? `${r.driver.user.firstName} ${r.driver.user.lastName}` : (
-                      <span className="text-ink-dim">Unassigned</span>
+                  <Td>
+                    {r.shareCode ? (
+                      <ShareRouteCard
+                        routeId={r.id}
+                        routeName={r.name}
+                        shareCode={r.shareCode}
+                        isOwner={isOwner}
+                        compact
+                      />
+                    ) : (
+                      <span className="text-ink-faint">—</span>
                     )}
-                  </Td>
-                  <Td className="tabular-nums text-ink">
-                    v{latest?.versionNumber ?? '—'}
-                    <p className="text-xs text-ink-dim">
-                      {r.versions.length} version{r.versions.length === 1 ? '' : 's'}
-                    </p>
                   </Td>
                   <Td className="tabular-nums text-ink">{latest?._count.stops ?? 0}</Td>
                   <Td className="tabular-nums text-ink">
@@ -188,23 +206,40 @@ export default async function RoutesPage() {
                   <Td>
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Link
+                        href={`/routes/${r.id}/memorize`}
+                        className="rounded-md bg-surface-2 px-2 py-1 text-xs font-medium text-ink ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2"
+                      >
+                        Memorize
+                      </Link>
+                      <Link
                         href={`/routes/${r.id}/run`}
                         className="rounded-md bg-accent px-2 py-1 text-xs font-semibold text-accent-ink transition-colors hover:bg-accent-bright"
                       >
-                        Run
+                        Deliver
                       </Link>
-                      <Link
-                        href={`/routes/${r.id}/edit`}
-                        className="rounded-md bg-surface-2 px-2 py-1 text-xs font-medium text-ink ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2"
-                      >
-                        Edit
-                      </Link>
-                      <form action={reoptimizeRouteAction}>
-                        <input type="hidden" name="routeId" value={r.id} />
-                        <Button variant="secondary" className="px-2 py-1 text-xs">
-                          Re-optimise
-                        </Button>
-                      </form>
+                      {isOwner ? (
+                        <>
+                          <Link
+                            href={`/routes/${r.id}/edit`}
+                            className="rounded-md bg-surface-2 px-2 py-1 text-xs font-medium text-ink ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2"
+                          >
+                            Edit
+                          </Link>
+                          <form action={reoptimizeRouteAction}>
+                            <input type="hidden" name="routeId" value={r.id} />
+                            <Button variant="secondary" className="px-2 py-1 text-xs">
+                              Re-optimise
+                            </Button>
+                          </form>
+                        </>
+                      ) : (
+                        <form action={unsaveRouteAction}>
+                          <input type="hidden" name="routeId" value={r.id} />
+                          <Button variant="ghost" className="px-2 py-1 text-xs">
+                            Remove
+                          </Button>
+                        </form>
+                      )}
                     </div>
                   </Td>
                 </tr>

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { getSessionUser } from '@/lib/auth';
+import { getSessionUser, safeNextPath } from '@/lib/auth';
 import { signUpAction } from '@/lib/auth-actions';
 import ActionForm from '@/components/ActionForm';
 import { Field, Notice } from '@/components/ui';
@@ -12,10 +12,11 @@ export const dynamic = 'force-dynamic';
 export default async function SignUpPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; next?: string }>;
 }) {
-  if (await getSessionUser()) redirect('/');
-  const { error } = await searchParams;
+  const { error, next: rawNext } = await searchParams;
+  const next = safeNextPath(rawNext);
+  if (await getSessionUser()) redirect(next);
 
   const errorMessages: Record<string, string> = {
     oauth_cancelled: 'Google sign-up was cancelled.',
@@ -45,7 +46,7 @@ export default async function SignUpPage({
         </div>
       )}
 
-      <GoogleSignInButton text="Sign up with Google" />
+      <GoogleSignInButton text="Sign up with Google" next={next} />
 
       <ActionForm
         action={signUpAction}
@@ -61,7 +62,7 @@ export default async function SignUpPage({
         infoFooter={
           <div className="flex flex-wrap gap-2">
             <Link
-              href="/login"
+              href={next !== '/' ? `/login?next=${encodeURIComponent(next)}` : '/login'}
               className="inline-flex items-center justify-center rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-ink transition-colors hover:bg-accent-bright"
             >
               Sign in instead
@@ -75,6 +76,7 @@ export default async function SignUpPage({
           </div>
         }
       >
+        <input type="hidden" name="next" value={next} />
         <div className="grid grid-cols-2 gap-3">
           <Field label="First name" name="firstName" required autoComplete="given-name" />
           <Field label="Last name" name="lastName" autoComplete="family-name" />
@@ -109,15 +111,15 @@ export default async function SignUpPage({
 
       <div className="mt-6">
         <Notice>
-          New accounts are created as <strong className="font-semibold">delivery agents</strong>.
-          An administrator can change your role afterwards.
+          Every account can create routes, save shared routes by code or link, memorize stops, and
+          record deliveries.
         </Notice>
       </div>
 
       <p className="mt-8 border-t border-line pt-6 text-sm text-ink-dim">
         Already have an account?{' '}
         <Link
-          href="/login"
+          href={next !== '/' ? `/login?next=${encodeURIComponent(next)}` : '/login'}
           className="font-medium text-accent underline decoration-accent/40 underline-offset-4 transition-colors hover:decoration-accent"
         >
           Sign in

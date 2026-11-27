@@ -150,6 +150,7 @@ async function main() {
       entranceInstructions: l.entrance,
       securityInstructions: l.security,
       status: l.status ?? 'ACTIVE',
+      createdById: ID.admin,
     };
     await prisma.deliveryLocation.upsert({ where: { id }, update: data, create: { id, ...data } });
   }
@@ -191,10 +192,11 @@ async function main() {
   // ---- Route + version + stops ------------------------------------------
   await prisma.route.upsert({
     where: { id: ID.route1 },
-    update: { name: 'Morning Newspaper Route 01', status: 'ACTIVE', driverId: ID.driverProfile1 },
+    update: { name: 'Morning Newspaper Route 01', status: 'ACTIVE', shareCode: 'MORN0001', driverId: ID.driverProfile1 },
     create: {
       id: ID.route1,
       name: 'Morning Newspaper Route 01',
+      shareCode: 'MORN0001',
       status: 'ACTIVE',
       createdById: ID.admin,
       approvedById: ID.admin,

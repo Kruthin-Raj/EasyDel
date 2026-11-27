@@ -1,9 +1,9 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
-import { deliveryWhere, issueWhere, runWhere, seesAllData } from '@/lib/scope';
+import { deliveryWhere, issueWhere, runWhere } from '@/lib/scope';
 import { setIssueStatusAction } from '@/lib/actions';
-import { PageHeader, Card, Table, Row, Td, Badge, EmptyState, Button, Notice, when } from '@/components/ui';
+import { PageHeader, Card, Table, Row, Td, Badge, EmptyState, Button, when } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,32 +17,11 @@ export default async function DeliveryHistoryPage({
   const user = await requireUser();
   const { status = 'ALL' } = await searchParams;
 
-  /*
-   * Scoped, not global.
-   *
-   * These queries had no `where` beyond the status filter, so every agent's
-   * Delivery history listed every other agent's deliveries and every issue
-   * anyone had reported — other people's customers and addresses included.
-   * An agent now sees the runs they performed and the issues they raised;
-   * admins and mentors still see the whole operation.
-   */
-  const mine = !seesAllData(user);
-
   const [rounds, deliveries, issues] = await Promise.all([
-    /*
-     * Rounds, newest first — the list a driver actually thinks in.
-     *
-     * A round is the unit of work: "yesterday's fruit route" rather than one
-     * of its forty deliveries. Clicking one opens its report. Outcomes are
-     * pulled in so the summary counts come from the records themselves, and
-     * ABANDONED rounds are included on purpose — a round stopped early keeps
-     * everything recorded up to that point and still deserves a report.
-     */
     db.routeRun.findMany({
       where: runWhere(user),
       include: {
         routeVersion: { include: { route: { select: { name: true } } } },
-        driver: { select: { firstName: true, lastName: true } },
         deliveries: { select: { status: true, quantity: true, notes: true } },
         _count: { select: { issues: true } },
       },
@@ -71,19 +50,8 @@ export default async function DeliveryHistoryPage({
     <>
       <PageHeader
         title="Delivery history"
-        subtitle={
-          mine
-            ? 'Every delivery you have recorded, including failures and skips with reasons.'
-            : 'Immutable record of every delivery attempt, including failures and skips with reasons.'
-        }
+        subtitle="Every delivery you have recorded, including failures and skips with reasons."
       />
-
-      {mine && (
-        <Notice>
-          You are seeing your own deliveries and the issues you reported. Administrators see the
-          whole operation.
-        </Notice>
-      )}
 
       {/* ------------------------------------------------------- rounds --- */}
       <Card
@@ -119,7 +87,6 @@ export default async function DeliveryHistoryPage({
                     </Link>
                     <p className="text-xs text-ink-dim">
                       v{r.routeVersion.versionNumber}
-                      {!mine && ` · ${r.driver.firstName} ${r.driver.lastName}`}
                     </p>
                   </Td>
                   <Td>

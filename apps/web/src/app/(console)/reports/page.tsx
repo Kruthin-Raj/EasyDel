@@ -1,7 +1,7 @@
+import Link from 'next/link';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
-import { seesAllData } from '@/lib/scope';
-import Forbidden from '@/components/Forbidden';
+import { deliveryWhere, locationWhere, routeWhere, trainingWhere } from '@/lib/scope';
 import { PageHeader, Card, StatCard, Table, Td, EmptyState, metres, duration } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
@@ -55,49 +55,40 @@ function BarChart({
 
 export default async function ReportsPage() {
   const user = await requireUser();
+  const dScope = deliveryWhere(user);
+  const rScope = await routeWhere(user);
+  const tScope = trainingWhere(user);
 
-  /*
-   * Reports aggregate the whole operation — every driver's deliveries, every
-   * route's distance. There is no meaningful way to scope that to one agent
-   * (a report of yourself is just your delivery history), so the page is
-   * limited to the roles that supervise. The nav link is hidden for agents to
-   * match; this is the check that holds for a typed URL.
-   */
-  if (!seesAllData(user)) {
-    return (
-      <Forbidden
-        title="Reports cover the whole operation"
-        reason="These figures combine every driver's deliveries and routes, so they are limited to administrators and mentors."
-        role={user.role}
-        hint="Your own deliveries, with a per-round report, are under Delivery history."
-      />
-    );
-  }
-
-  const [byStatus, routeAgg, stopCount, training, drivers, locationsByStatus] = await Promise.all([
-    db.delivery.groupBy({ by: ['status'], _count: { _all: true }, _sum: { quantity: true } }),
-    db.routeVersion.aggregate({
-      _sum: { totalDistance: true, estimatedDuration: true },
-      _avg: { totalDistance: true },
+  const [byStatus, myRoutes, training, locationsByStatus] = await Promise.all([
+    db.delivery.groupBy({
+      by: ['status'],
+      where: dScope,
+      _count: { _all: true },
+      _sum: { quantity: true },
+    }),
+    db.route.findMany({
+      where: rScope,
+      include: {
+        createdBy: { select: { firstName: true, lastName: true } },
+        versions: {
+          orderBy: { versionNumber: 'desc' },
+          take: 1,
+          include: { _count: { select: { stops: true } } },
+        },
+        _count: { select: { versions: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    }),
+    db.trainingSession.aggregate({
+      where: tScope,
+      _sum: { distance: true, duration: true },
       _count: true,
     }),
-    db.routeStop.count(),
-    db.trainingSession.aggregate({ _sum: { distance: true, duration: true }, _count: true }),
-    db.driverProfile.findMany({
-      include: {
-        user: true,
-        assignedRoutes: {
-          include: {
-            versions: {
-              orderBy: { versionNumber: 'desc' },
-              take: 1,
-              include: { _count: { select: { stops: true, deliveries: true } } },
-            },
-          },
-        },
-      },
+    db.deliveryLocation.groupBy({
+      by: ['status'],
+      where: locationWhere(user),
+      _count: { _all: true },
     }),
-    db.deliveryLocation.groupBy({ by: ['status'], _count: { _all: true } }),
   ]);
 
   const count = (s: string) => byStatus.find((b) => b.status === s)?._count._all ?? 0;
@@ -110,11 +101,19 @@ export default async function ReportsPage() {
   const itemsDelivered =
     byStatus.find((b) => b.status === 'DELIVERED')?._sum.quantity ?? 0;
 
+  const totalDistance = myRoutes.reduce((sum, r) => sum + (r.versions[0]?.totalDistance ?? 0), 0);
+  const avgDistance = myRoutes.length ? totalDistance / myRoutes.length : null;
+  const totalStops = myRoutes.reduce((sum, r) => sum + (r.versions[0]?._count.stops ?? 0), 0);
+  const totalPlannedDuration = myRoutes.reduce(
+    (sum, r) => sum + (r.versions[0]?.estimatedDuration ?? 0),
+    0,
+  );
+
   return (
     <>
       <PageHeader
-        title="Reports"
-        subtitle="Aggregates computed live from delivery, route and training records."
+        title="My reports"
+        subtitle="Summary of your deliveries, routes, and recorded rounds."
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -125,11 +124,11 @@ export default async function ReportsPage() {
           tone={successRate >= 90 ? 'positive' : successRate >= 70 ? 'warning' : 'critical'}
         />
         <StatCard label="Items delivered" value={itemsDelivered} tone="positive" />
-        <StatCard label="Total distance planned" value={metres(routeAgg._sum.totalDistance)} />
+        <StatCard label="Combined route distance" value={metres(totalDistance)} />
         <StatCard
           label="Avg route distance"
-          value={metres(routeAgg._avg.totalDistance)}
-          hint={`across ${routeAgg._count} version${routeAgg._count === 1 ? '' : 's'}`}
+          value={metres(avgDistance)}
+          hint={`across ${myRoutes.length} route${myRoutes.length === 1 ? '' : 's'}`}
         />
       </div>
 
@@ -160,15 +159,15 @@ export default async function ReportsPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card title="Route planning totals">
+        <Card title="My route totals">
           <div className="grid grid-cols-2 gap-px bg-line">
             {[
-              { label: 'Route versions', value: String(routeAgg._count) },
-              { label: 'Total stops planned', value: String(stopCount) },
-              { label: 'Total planned driving', value: duration(routeAgg._sum.estimatedDuration) },
+              { label: 'Routes in list', value: String(myRoutes.length) },
+              { label: 'Total stops', value: String(totalStops) },
+              { label: 'Planned time', value: duration(totalPlannedDuration) },
               {
-                label: 'Avg stops per version',
-                value: routeAgg._count ? (stopCount / routeAgg._count).toFixed(1) : '—',
+                label: 'Avg stops per route',
+                value: myRoutes.length ? (totalStops / myRoutes.length).toFixed(1) : '—',
               },
             ].map((m) => (
               <div key={m.label} className="bg-panel px-5 py-4">
@@ -181,14 +180,14 @@ export default async function ReportsPage() {
           </div>
         </Card>
 
-        <Card title="Training totals">
+        <Card title="Recorded rounds">
           <div className="grid grid-cols-2 gap-px bg-line">
             {[
-              { label: 'Sessions completed', value: String(training._count) },
-              { label: 'Distance trained', value: metres(training._sum.distance) },
-              { label: 'Time trained', value: duration(training._sum.duration) },
+              { label: 'Rounds recorded', value: String(training._count) },
+              { label: 'Distance recorded', value: metres(training._sum.distance) },
+              { label: 'Time recorded', value: duration(training._sum.duration) },
               {
-                label: 'Avg session',
+                label: 'Avg round',
                 value: training._count
                   ? duration((training._sum.duration ?? 0) / training._count)
                   : '—',
@@ -205,36 +204,31 @@ export default async function ReportsPage() {
         </Card>
       </div>
 
-      <Card title="Driver performance" description="Routes assigned and stops planned per driver.">
-        {drivers.length === 0 ? (
-          <EmptyState message="No drivers to report on." />
+      <Card title="My routes summary" description="Routes you created or saved via share code.">
+        {myRoutes.length === 0 ? (
+          <EmptyState message="No routes yet." />
         ) : (
-          <Table head={['Driver', 'Vehicle', 'Routes assigned', 'Stops on latest versions', 'Status']}>
-            {drivers.map((d) => {
-              const stops = d.assignedRoutes.reduce(
-                (sum, r) => sum + (r.versions[0]?._count.stops ?? 0),
-                0,
-              );
-              return (
-                <tr key={d.id} className="hover:bg-panel-2/60">
-                  <Td className="font-medium text-ink">
-                    {d.user.firstName} {d.user.lastName}
-                  </Td>
-                  <Td className="text-ink-dim">{d.vehicleType ?? '—'}</Td>
-                  <Td className="tabular-nums text-ink">{d.assignedRoutes.length}</Td>
-                  <Td className="tabular-nums text-ink">{stops}</Td>
-                  <Td className="text-ink-dim">{d.active ? 'Active' : 'Inactive'}</Td>
-                </tr>
-              );
-            })}
+          <Table head={['Route', 'Source', 'Stops', 'Distance', 'Versions']}>
+            {myRoutes.map((r) => (
+              <tr key={r.id} className="hover:bg-panel-2/60">
+                <Td className="font-medium text-ink">
+                  <Link href={`/routes/${r.id}`} className="text-accent hover:underline">
+                    {r.name}
+                  </Link>
+                </Td>
+                <Td className="text-ink-dim">
+                  {r.createdById === user.id
+                    ? 'Created by you'
+                    : `Saved · ${r.createdBy.firstName} ${r.createdBy.lastName}`}
+                </Td>
+                <Td className="tabular-nums text-ink">{r.versions[0]?._count.stops ?? 0}</Td>
+                <Td className="tabular-nums text-ink">{metres(r.versions[0]?.totalDistance)}</Td>
+                <Td className="tabular-nums text-ink-dim">{r._count.versions}</Td>
+              </tr>
+            ))}
           </Table>
         )}
       </Card>
-
-      <p className="text-sm text-ink-dim">
-        Average delivery time per stop is not reported yet — it needs per-stop start timestamps,
-        which the mobile app will record once delivery completion is built. See the README TODO.
-      </p>
     </>
   );
 }

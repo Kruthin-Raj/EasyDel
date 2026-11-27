@@ -21,7 +21,6 @@ export const ALL_NAV_HREFS = [
   '/locations',
   '/imports',
   '/delivery-history',
-  '/live',
   '/reports',
   '/settings',
 ] as const;

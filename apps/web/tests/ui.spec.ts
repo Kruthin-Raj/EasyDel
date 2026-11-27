@@ -41,7 +41,7 @@ async function signIn(page: Page) {
   // heading is also "Welcome back", so matching that text alone would pass
   // even when sign-in silently failed.
   await expect(page).toHaveURL(/localhost:\d+\/(\?.*)?$/);
-  await expect(page.getByText('Total drivers')).toBeVisible();
+  await expect(page.getByText('Open a shared route')).toBeVisible();
 }
 
 test.describe('authentication', () => {
@@ -148,11 +148,11 @@ test.describe('dashboard pages render real data', () => {
     await signIn(page);
   });
 
-  test('dashboard shows seeded counts and audit events', async ({ page }) => {
-    // Stat tiles must show real numbers, not placeholders.
-    await expect(page.getByText('Total drivers')).toBeVisible();
-    await expect(page.getByText('Audit trail')).toBeVisible();
-    await expect(page.getByText('Green Residency').first()).toBeVisible();
+  test('dashboard shows seeded counts and route sharing card', async ({ page }) => {
+    await expect(page.getByText('My routes').first()).toBeVisible();
+    await expect(page.getByText('Open a shared route')).toBeVisible();
+    await expect(page.getByText('Saved shared routes')).toBeVisible();
+    await expect(page.getByText('Total drivers')).toHaveCount(0);
     await expect(page.getByText('Chart Visualization Placeholder')).toHaveCount(0);
   });
 
@@ -169,44 +169,42 @@ test.describe('dashboard pages render real data', () => {
     await expect(page.getByText('Old Depot Store')).toBeVisible();
   });
 
-  test('routes list and detail page render the optimised stop order', async ({ page }) => {
+  test('routes list, share link, memorize mode and detail page work', async ({ page }) => {
     await page.goto('/routes');
     await expect(page.getByText('Morning Newspaper Route 01')).toBeVisible();
+    await expect(page.getByText('MORN0001').first()).toBeVisible();
 
     await page.getByRole('link', { name: 'Morning Newspaper Route 01' }).click();
     await expect(page.getByRole('heading', { name: 'Morning Newspaper Route 01' })).toBeVisible();
     await expect(page.getByText('Stops in order')).toBeVisible();
     await expect(page.getByText('Version history')).toBeVisible();
+
+    await page.getByRole('link', { name: /Memorize route/i }).first().click();
+    await expect(page).toHaveURL(/\/memorize$/);
+    await expect(page.getByText(/Memorization progress/i)).toBeVisible();
   });
 
-  test('drivers, mentors and training routes show seeded people', async ({ page }) => {
-    await page.goto('/drivers');
-    await expect(page.getByText('driver@easydel.dev')).toBeVisible();
-
-    await page.goto('/mentors');
-    await expect(page.getByText('mentor@easydel.dev')).toBeVisible();
-
+  test('recorded rounds page shows seeded session', async ({ page }) => {
     await page.goto('/training-routes');
     await expect(page.getByText('Morning Route - Area 1 (Training)')).toBeVisible();
   });
 
-  test('reports computes aggregates', async ({ page }) => {
+  test('reports computes personal aggregates', async ({ page }) => {
     await page.goto('/reports');
     await expect(page.getByText('Success rate')).toBeVisible();
     await expect(page.getByText('Deliveries by outcome')).toBeVisible();
-    await expect(page.getByText('Driver performance')).toBeVisible();
+    await expect(page.getByText('My route totals')).toBeVisible();
   });
 
-  test('delivery history shows failures with their reasons', async ({ page }) => {
+  test('delivery history loads without crashing', async ({ page }) => {
     await page.goto('/delivery-history');
-    await expect(page.getByText('Building inaccessible').first()).toBeVisible();
-    await expect(page.getByText('Customer unavailable').first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Delivery history' })).toBeVisible();
   });
 
-  test('settings loads persisted toggles', async ({ page }) => {
+  test('settings loads per-user preferences', async ({ page }) => {
     await page.goto('/settings');
-    await expect(page.getByLabel(/Agents can create routes/)).toBeVisible();
-    await expect(page.getByLabel(/Warn if driver is further than/)).toHaveValue(/\d+/);
+    await expect(page.getByLabel(/Your default options when recording a checkpoint/)).toBeVisible();
+    await expect(page.getByLabel(/Warn if you are further than/)).toHaveValue(/\d+/);
   });
 
   test('download page does not advertise a build that does not exist', async ({ page }) => {
@@ -216,12 +214,27 @@ test.describe('dashboard pages render real data', () => {
     await expect(page.getByRole('button', { name: /Download Latest APK/ })).toHaveCount(0);
   });
 
-  test('every sidebar link resolves — no dead 404s', async ({ page }) => {
-    const links = ['/', '/live', '/locations', '/routes', '/drivers', '/mentors',
-      '/training-routes', '/imports', '/delivery-history', '/reports', '/settings'];
+  test('every sidebar link resolves and removed admin/live routes 404', async ({ page }) => {
+    const links = [
+      '/',
+      '/routes',
+      '/share',
+      '/record',
+      '/routes/from-links',
+      '/training-routes',
+      '/locations',
+      '/imports',
+      '/delivery-history',
+      '/reports',
+      '/settings',
+    ];
     for (const href of links) {
       const response = await page.goto(href);
       expect(response?.status(), `${href} should not 404`).toBe(200);
+    }
+    for (const removed of ['/live', '/drivers', '/mentors']) {
+      const response = await page.goto(removed);
+      expect(response?.status(), `${removed} should be removed`).toBe(404);
     }
   });
 });

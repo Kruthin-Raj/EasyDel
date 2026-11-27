@@ -14,7 +14,6 @@
     "db:seed": "node prisma/seed.mjs",
     "db:reset": "node scripts/guard-destructive.mjs \"prisma migrate reset\" && prisma migrate reset",
     "db:migrate:new": "node scripts/new-migration.mjs",
-    "db:make-admin": "node scripts/make-admin.mjs",
     "test:fixtures": "node scripts/test-fixtures.mjs"
   },
   "dependencies": {

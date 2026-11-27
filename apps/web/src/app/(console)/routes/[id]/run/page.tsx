@@ -162,8 +162,33 @@ export default async function RunPage({
     orderedStops.map((stop) => signedPhotoUrl(stop.deliveryLocation.photo, 60 * 60 * 8)),
   );
 
+  const personalNotesByLocation = new Map<string, string>();
+  if (route.createdById !== user.id && orderedStops.length > 0) {
+    const pastNotes = await db.delivery.findMany({
+      where: {
+        routeRun: { driverId: user.id },
+        notes: { not: null },
+        subscription: {
+          deliveryLocationId: { in: orderedStops.map((s) => s.deliveryLocationId) },
+        },
+      },
+      orderBy: [{ timestamp: 'desc' }, { updatedAt: 'desc' }],
+      select: {
+        notes: true,
+        subscription: { select: { deliveryLocationId: true } },
+      },
+      take: 100,
+    });
+    for (const row of pastNotes) {
+      if (row.notes?.trim() && !personalNotesByLocation.has(row.subscription.deliveryLocationId)) {
+        personalNotesByLocation.set(row.subscription.deliveryLocationId, row.notes.trim());
+      }
+    }
+  }
+
   const stops: RunStop[] = orderedStops.map((stop, index) => {
     const recorded = byLocation.get(stop.deliveryLocationId);
+    const personalNote = personalNotesByLocation.get(stop.deliveryLocationId);
     return {
       id: stop.id,
       // Renumbered against the run's own order so the driver sees 1, 2, 3…
@@ -174,10 +199,11 @@ export default async function RunPage({
       latitude: stop.deliveryLocation.latitude,
       longitude: stop.deliveryLocation.longitude,
       notes: stop.deliveryLocation.notes,
-      previousNote: stop.deliveryLocation.nextVisitNote,
+      previousNote: personalNote ?? stop.deliveryLocation.nextVisitNote,
       floor: stop.deliveryLocation.floor,
       unit: stop.deliveryLocation.unit,
       entranceInstructions: stop.deliveryLocation.entranceInstructions,
+      securityInstructions: stop.deliveryLocation.securityInstructions,
       photoUrl: photoUrls[index],
       subscriptions: stop.deliveryLocation.subscriptions.map((sub) => ({
         id: sub.id,

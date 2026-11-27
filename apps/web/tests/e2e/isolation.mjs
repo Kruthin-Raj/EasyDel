@@ -78,14 +78,17 @@ await b.waitForTimeout(400);
 const nav = await b.locator('nav[aria-label="Main"]').last().innerText();
 check('nav has no Drivers admin page', !nav.includes('Drivers'));
 check('nav has no Mentors admin page', !nav.includes('Mentors'));
+check('nav has no Live GPS page', !nav.includes('Live GPS'));
 check('nav offers My routes', nav.includes('My routes'));
 check('nav offers Join by code', nav.includes('Join by code'));
 check('nav offers Record a route', nav.includes('Record a route'));
 check('nav offers Reports', nav.includes('Reports'));
 
-// Legacy /drivers redirects cleanly to /routes.
-await b.goto(`${BASE}/drivers`, { waitUntil: 'networkidle' });
-check('legacy /drivers redirects to /routes', b.url().endsWith('/routes'));
+// Legacy admin & live-GPS routes were removed completely (must 404).
+for (const legacy of ['/drivers', '/mentors', '/live']) {
+  const res = await b.goto(`${BASE}${legacy}`, { waitUntil: 'networkidle' });
+  check(`legacy ${legacy} is removed (404)`, res?.status() === 404);
+}
 
 // B can join A's route by share code E2EROUTA, save it, and memorize it.
 await b.goto(`${BASE}/share/E2EROUTA`, { waitUntil: 'networkidle' });

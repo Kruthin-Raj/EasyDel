@@ -23,6 +23,10 @@ type Checkpoint = {
   longitude: number;
   deliveryType: string | null;
   quantity: number | null;
+  floor: string | null;
+  unit: string | null;
+  entranceInstructions: string | null;
+  securityInstructions: string | null;
   notes: string | null;
   nextVisitNote: string | null;
   photoUrl: string | null;
@@ -440,6 +444,25 @@ export default function RecordingConsole({
               </label>
             </div>
 
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-medium text-ink">Entrance instructions</span>
+                <input
+                  name="entranceInstructions"
+                  placeholder="e.g. Side gate near meter"
+                  className="field"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-medium text-ink">Security / gate note</span>
+                <input
+                  name="securityInstructions"
+                  placeholder="e.g. Ask guard Ramesh"
+                  className="field"
+                />
+              </label>
+            </div>
+
             {/* capture="environment" opens the rear camera directly on a phone
                 instead of a file browser. */}
             <label className="block">
@@ -590,6 +613,16 @@ export default function RecordingConsole({
                     </div>
                   )}
                   {c.notes && <p className="mt-1 text-xs text-ink-dim">{c.notes}</p>}
+                  {(c.entranceInstructions || c.securityInstructions) && (
+                    <p className="mt-1 text-xs text-ink-dim">
+                      {[
+                        c.entranceInstructions && `Entrance: ${c.entranceInstructions}`,
+                        c.securityInstructions && `Security: ${c.securityInstructions}`,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </p>
+                  )}
                   {c.nextVisitNote && (
                     <p className="mt-1 text-xs text-warn">Next visit: {c.nextVisitNote}</p>
                   )}
@@ -601,6 +634,10 @@ export default function RecordingConsole({
                       address: c.address,
                       deliveryType: c.deliveryType,
                       quantity: c.quantity,
+                      floor: c.floor,
+                      unit: c.unit,
+                      entranceInstructions: c.entranceInstructions,
+                      securityInstructions: c.securityInstructions,
                       notes: c.notes,
                       nextVisitNote: c.nextVisitNote,
                     }}

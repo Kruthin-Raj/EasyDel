@@ -10,8 +10,6 @@ export const dynamic = 'force-dynamic';
 export default async function DashboardPage() {
   const user = await requireUser();
 
-  const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000);
-
   const dScope = deliveryWhere(user);
   const iScope = issueWhere(user);
   const rScope = await routeWhere(user);
@@ -24,7 +22,7 @@ export default async function DashboardPage() {
     failed,
     skipped,
     trainingSessions,
-    activeGpsUsers,
+    savedSharedCount,
     openIssues,
     recentDeliveries,
     recentAudit,
@@ -35,14 +33,7 @@ export default async function DashboardPage() {
     db.delivery.count({ where: { ...dScope, status: 'FAILED' } }),
     db.delivery.count({ where: { ...dScope, status: 'SKIPPED' } }),
     db.trainingSession.count({ where: tScope }),
-    db.gPSPoint.findMany({
-      where: {
-        timestamp: { gte: fifteenMinAgo },
-        userId: user.id,
-      },
-      select: { userId: true },
-      distinct: ['userId'],
-    }),
+    db.savedRoute.count({ where: { userId: user.id } }),
     db.issue.count({ where: { ...iScope, status: 'OPEN' } }),
     db.delivery.findMany({
       where: dScope,
@@ -102,10 +93,10 @@ export default async function DashboardPage() {
         <StatCard label="Skipped" value={skipped} />
         <StatCard label="Recorded rounds" value={trainingSessions} />
         <StatCard
-          label="My GPS tracking"
-          value={activeGpsUsers.length}
-          hint="Reported in the last 15 min"
-          tone={activeGpsUsers.length > 0 ? 'positive' : 'neutral'}
+          label="Saved shared routes"
+          value={savedSharedCount}
+          hint="Joined via share code or link"
+          tone={savedSharedCount > 0 ? 'info' : 'neutral'}
         />
         <StatCard
           label="Open issues"

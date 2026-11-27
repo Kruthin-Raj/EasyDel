@@ -38,6 +38,7 @@ export type RunStop = {
   floor: string | null;
   unit: string | null;
   entranceInstructions: string | null;
+  securityInstructions?: string | null;
   /** Signed URL for the house photo taken during training, if there is one. */
   photoUrl: string | null;
   subscriptions: {
@@ -443,6 +444,9 @@ export default function RunConsole({
             )}
             {current.entranceInstructions && (
               <p className="text-sm text-ink-dim">Entrance: {current.entranceInstructions}</p>
+            )}
+            {current.securityInstructions && (
+              <p className="text-sm text-ink-dim">Security: {current.securityInstructions}</p>
             )}
 
             {tooFar && (

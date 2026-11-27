@@ -1,10 +1,12 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { db } from '@/lib/db';
-import { currentUserWith } from '@/lib/permissions';
+import { requireUser } from '@/lib/auth';
+import { canSeeTrainingSession } from '@/lib/scope';
 import { generateRouteFromSessionAction } from '@/lib/recording-actions';
 import { signedPhotoUrl } from '@/lib/storage';
 import ActionForm from '@/components/ActionForm';
+import Forbidden from '@/components/Forbidden';
 import LiveMap, { type MapMarker } from '@/components/Map';
 import { PageHeader, Card, MetricStrip, Badge, EmptyState, Notice, when, metres, duration } from '@/components/ui';
 
@@ -17,7 +19,7 @@ export default async function TrainingSessionPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ finished?: string }>;
 }) {
-  const { user, can } = await currentUserWith(['create_routes']);
+  const user = await requireUser();
   const { id } = await params;
   const { finished } = await searchParams;
 
@@ -31,6 +33,16 @@ export default async function TrainingSessionPage({
   });
 
   if (!session) notFound();
+
+  if (!(await canSeeTrainingSession(user, id))) {
+    return (
+      <Forbidden
+        title="This recorded round belongs to someone else"
+        reason="Recorded rounds are private until you turn them into a route and share its code or link."
+        hint="Ask the creator for the route's share code once they generate it."
+      />
+    );
+  }
 
   // Signed URLs are minted per request and expire — a photo of someone's front
   // door should not sit behind a permanent public link.
@@ -110,11 +122,6 @@ export default async function TrainingSessionPage({
           ) : session.checkpoints.length === 0 ? (
             <p className="text-sm text-ink-dim">
               This round has no checkpoints, so there is nothing to turn into a route.
-            </p>
-          ) : !can.create_routes ? (
-            <p className="text-sm text-ink-dim">
-              Your role cannot create routes. An administrator can generate one from this round, or
-              enable the permission under Settings.
             </p>
           ) : (
             <div className="max-w-md">
@@ -207,12 +214,9 @@ export default async function TrainingSessionPage({
         )}
       </Card>
 
-      {user.role === 'ADMIN' && (
-        <p className="text-sm text-ink-dim">
-          Photos are served through signed URLs that expire after an hour, from a private storage
-          bucket.
-        </p>
-      )}
+      <p className="text-sm text-ink-dim">
+        Photos are served through short-lived signed URLs from private storage.
+      </p>
     </>
   );
 }

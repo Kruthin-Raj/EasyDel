@@ -1,23 +1,11 @@
 import Link from 'next/link';
-import { currentUserWith } from '@/lib/permissions';
-import Forbidden from '@/components/Forbidden';
+import { requireUser } from '@/lib/auth';
 import { createLocationAction, createLocationFromLinkAction } from '@/lib/actions';
 import ActionForm from '@/components/ActionForm';
 import { PageHeader, Card, Field, TextArea, Notice } from '@/components/ui';
 
 export default async function NewLocationPage() {
-  const { user, can } = await currentUserWith(['edit_locations']);
-
-  if (!can.edit_locations) {
-    return (
-      <Forbidden
-        title="You can't add permanent locations"
-        reason="Creating a permanent delivery location is restricted. Locations you capture while recording a route are saved automatically, so you rarely need this."
-        role={user.role}
-        hint="An administrator can allow this under Settings → Delivery agent permissions."
-      />
-    );
-  }
+  await requireUser();
 
   return (
     <>

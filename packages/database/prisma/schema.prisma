@@ -68,9 +68,11 @@ model User {
   driverProfile DriverProfile?
   mentorProfile MentorProfile?
 
-  routeRuns         RouteRun[]    @relation("DriverRuns")
-  createdRoutes     Route[]       @relation("CreatedRoutes")
-  approvedRoutes    Route[]       @relation("ApprovedRoutes")
+  routeRuns         RouteRun[]         @relation("DriverRuns")
+  createdRoutes     Route[]            @relation("CreatedRoutes")
+  approvedRoutes    Route[]            @relation("ApprovedRoutes")
+  createdLocations  DeliveryLocation[] @relation("CreatedLocations")
+  savedRoutes       SavedRoute[]
   auditLogs         AuditLog[]
   trainingSessions  TrainingSession[] @relation("MentorSessions")
   trainedSessions   TrainingSession[] @relation("TraineeSessions")
@@ -109,12 +111,17 @@ model DeliveryLocation {
   status               LocationStatus @default(ACTIVE)
   pauseUntil           DateTime?
 
+  createdById          String?
+  createdBy            User?          @relation("CreatedLocations", fields: [createdById], references: [id])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   subscriptions Subscription[]
   routeStops    RouteStop[]
   history       LocationHistory[]
+
+  @@index([createdById, status])
 }
 
 model Subscription {
@@ -139,6 +146,7 @@ model Subscription {
 model Route {
   id          String      @id @default(uuid())
   name        String
+  shareCode   String?     @unique
   status      RouteStatus @default(DRAFT)
   
   createdById String
@@ -154,6 +162,21 @@ model Route {
   updatedAt   DateTime @updatedAt
 
   versions    RouteVersion[]
+  savedBy     SavedRoute[]
+}
+
+/// A route saved into another user's route list via its unique share code or
+/// link so they can memorize the stops and deliver based on it.
+model SavedRoute {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  routeId   String
+  route     Route    @relation(fields: [routeId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([userId, routeId])
+  @@index([userId, createdAt])
 }
 
 model RouteVersion {

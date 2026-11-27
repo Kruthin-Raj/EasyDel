@@ -7,38 +7,16 @@ import {
   addLinksToRouteAction,
 } from '@/lib/route-import-actions';
 import LinkRouteBuilder from '@/components/LinkRouteBuilder';
-import Forbidden from '@/components/Forbidden';
 import { PageHeader, Notice } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Route from map links — EasyDel' };
 
 export default async function RouteFromLinksPage() {
-  const { user, can, settings } = await currentUserWith(['import_map_links', 'create_routes']);
+  const { user, settings } = await currentUserWith([]);
 
-  if (!can.import_map_links || !can.create_routes) {
-    return (
-      <Forbidden
-        title="Building routes from map links is turned off for your role"
-        reason="An administrator has disabled pasting map links, or route creation, for delivery agents."
-        role={user.role}
-        hint="They can enable it under Settings → Delivery agent permissions."
-      />
-    );
-  }
-
-  // Only routes this person may reshape: their own, or anything when admin.
-  const driverProfile = await db.driverProfile.findUnique({ where: { userId: user.id } });
   const routes = await db.route.findMany({
-    where:
-      user.role === 'ADMIN'
-        ? {}
-        : {
-            OR: [
-              { createdById: user.id },
-              ...(driverProfile ? [{ driverId: driverProfile.id }] : []),
-            ],
-          },
+    where: { createdById: user.id },
     include: {
       versions: {
         orderBy: { versionNumber: 'desc' },

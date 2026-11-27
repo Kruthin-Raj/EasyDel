@@ -29,13 +29,14 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         </Link>
 
         <div className="relative max-w-md">
-          <p className="eyebrow mb-4 text-accent">Dispatch console</p>
+          <p className="eyebrow mb-4 text-accent">Route companion</p>
           <h2 className="text-3xl font-semibold leading-tight text-ink">
-            Every stop, every subscription, every driver — on one board.
+            Create routes, share a code, memorize every stop, and deliver.
           </h2>
           <p className="mt-4 text-sm leading-relaxed text-ink-dim">
-            Built on OpenStreetMap, MapLibre and OSRM. No per-request mapping
-            bill, and no vendor deciding what your routing costs next quarter.
+            Built on OpenStreetMap, MapLibre and OSRM. Record a round once or paste
+            map links, share it with a unique link or code, and let anyone learn and
+            deliver the route stop by stop.
           </p>
 
           <dl className="mt-10 grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-line bg-line">

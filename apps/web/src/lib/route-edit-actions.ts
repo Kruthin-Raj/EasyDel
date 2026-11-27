@@ -6,7 +6,7 @@ import { db } from './db';
 import { requireUser } from './auth';
 import { requireCapability } from './permissions';
 import { parseMapLink, resolveShortLink } from './map-links';
-import { optimizeRoute, refineWithOsrm, haversine, isValidCoord, type Point } from './optimize';
+import { optimizeRoute, refineWithOsrm, haversine, type Point } from './optimize';
 
 /*
  * Editing an existing route: add stops, remove stops, re-optimise, delete.
@@ -19,8 +19,8 @@ import { optimizeRoute, refineWithOsrm, haversine, isValidCoord, type Point } fr
 
 export type EditState = { error?: string; success?: string; info?: string } | null;
 
-/** Loads a route and checks the caller may reshape it. */
-async function editableRoute(routeId: string, userId: string, role: string) {
+/** Loads a route and checks the caller created it. */
+async function editableRoute(routeId: string, userId: string) {
   const route = await db.route.findUnique({
     where: { id: routeId },
     include: {
@@ -33,15 +33,10 @@ async function editableRoute(routeId: string, userId: string, role: string) {
   });
   if (!route) return { error: 'That route no longer exists.' as const, route: null };
 
-  const driverProfile = await db.driverProfile.findUnique({ where: { userId } });
-  const mayEdit =
-    role === 'ADMIN' ||
-    route.createdById === userId ||
-    (route.driverId !== null && route.driverId === driverProfile?.id);
-
-  if (!mayEdit) {
+  if (route.createdById !== userId) {
     return {
-      error: 'You can only change routes you created or are assigned to.' as const,
+      error:
+        'You can only change routes you created. Make your own copy of a shared route to customise it.' as const,
       route: null,
     };
   }
@@ -152,7 +147,7 @@ export async function addStopByLinkAction(_prev: EditState, formData: FormData):
 
   if (!link) return { error: 'Paste a map link or a "latitude, longitude" pair.' };
 
-  const { error, route } = await editableRoute(routeId, user.id, user.role);
+  const { error, route } = await editableRoute(routeId, user.id);
   if (error || !route) return { error: error ?? 'Route not found.' };
 
   const latest = route.versions[0];
@@ -170,7 +165,7 @@ export async function addStopByLinkAction(_prev: EditState, formData: FormData):
   const lng = parsed.longitude;
 
   const existing = await db.deliveryLocation.findMany({
-    where: { status: { in: ['ACTIVE', 'PAUSED'] } },
+    where: { createdById: user.id, status: { in: ['ACTIVE', 'PAUSED'] } },
     select: { id: true, name: true, latitude: true, longitude: true },
   });
   const near = existing.find(
@@ -193,6 +188,7 @@ export async function addStopByLinkAction(_prev: EditState, formData: FormData):
         address: `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
         latitude: lat,
         longitude: lng,
+        createdById: user.id,
       },
     });
     // Without a subscription the stop has nothing to deliver and would be
@@ -235,7 +231,7 @@ export async function addStopFromLocationAction(
 
   if (!locationId) return { error: 'Choose a checkpoint to add.' };
 
-  const { error, route } = await editableRoute(routeId, user.id, user.role);
+  const { error, route } = await editableRoute(routeId, user.id);
   if (error || !route) return { error: error ?? 'Route not found.' };
 
   const latest = route.versions[0];
@@ -245,7 +241,9 @@ export async function addStopFromLocationAction(
     where: { id: locationId },
     include: { subscriptions: { where: { status: 'ACTIVE' } } },
   });
-  if (!location) return { error: 'That checkpoint no longer exists.' };
+  if (!location || location.createdById !== user.id) {
+    return { error: 'That checkpoint no longer exists or belongs to another user.' };
+  }
 
   if (latest.stops.some((s) => s.deliveryLocationId === locationId)) {
     return { info: `“${location.name}” is already a stop on this route.` };
@@ -294,7 +292,7 @@ export async function removeStopAction(formData: FormData) {
   const routeId = String(formData.get('routeId') ?? '');
   const stopId = String(formData.get('stopId') ?? '');
 
-  const { route } = await editableRoute(routeId, user.id, user.role);
+  const { route } = await editableRoute(routeId, user.id);
   if (!route) return;
 
   const latest = route.versions[0];
@@ -338,7 +336,7 @@ export async function reoptimiseAction(formData: FormData) {
   const user = await requireCapability('optimize_routes');
   const routeId = String(formData.get('routeId') ?? '');
 
-  const { route } = await editableRoute(routeId, user.id, user.role);
+  const { route } = await editableRoute(routeId, user.id);
   if (!route) return;
 
   const latest = route.versions[0];
@@ -369,7 +367,7 @@ export async function deleteRouteAction(_prev: EditState, formData: FormData): P
   const mode = String(formData.get('mode') ?? 'archive');
   const reason = String(formData.get('reason') ?? '').trim().slice(0, 200) || null;
 
-  const { error, route } = await editableRoute(routeId, user.id, user.role);
+  const { error, route } = await editableRoute(routeId, user.id);
   if (error || !route) return { error: error ?? 'Route not found.' };
 
   const versionIds = (
@@ -389,32 +387,9 @@ export async function deleteRouteAction(_prev: EditState, formData: FormData): P
         error: `This route has ${deliveries} delivery record(s) across ${runs} run(s). Deleting it would destroy that history — archive it instead.`,
       };
     }
-    /*
-     * Who may permanently delete.
-     *
-     * Admin, the creator, or the driver it is assigned to. Assignment used to
-     * be excluded, so a driver handed a route someone else had built could
-     * archive it but not remove it — an odd half-permission given they are the
-     * one working it, and agents are meant to have admin-like reach over
-     * routes (just not over accounts).
-     *
-     * The real protection is the history check above, not this test: a route
-     * with any run or delivery against it cannot be permanently deleted by
-     * anyone, including an admin.
-     */
-    const driverProfile = await db.driverProfile.findUnique({ where: { userId: user.id } });
-    const mayDelete =
-      user.role === 'ADMIN' ||
-      route.createdById === user.id ||
-      (route.driverId !== null && route.driverId === driverProfile?.id);
-
-    if (!mayDelete) {
-      return {
-        error: 'Only an administrator, the route’s creator, or its assigned driver can delete it.',
-      };
-    }
 
     // Safe now: nothing references these versions.
+    await db.savedRoute.deleteMany({ where: { routeId } });
     await db.routeStop.deleteMany({ where: { routeVersionId: { in: versionIds } } });
     await db.routeVersion.deleteMany({ where: { routeId } });
     await db.trainingSession.updateMany({
@@ -460,7 +435,7 @@ export async function restoreRouteAction(formData: FormData) {
   const user = await requireUser();
   const routeId = String(formData.get('routeId') ?? '');
 
-  const { route } = await editableRoute(routeId, user.id, user.role);
+  const { route } = await editableRoute(routeId, user.id);
   if (!route) return;
 
   await db.route.update({ where: { id: routeId }, data: { status: 'ACTIVE' } });
@@ -487,7 +462,7 @@ export async function renameRouteAction(_prev: EditState, formData: FormData): P
 
   if (!newName) return { error: 'Provide a name for the route.' };
 
-  const { error, route } = await editableRoute(routeId, user.id, user.role);
+  const { error, route } = await editableRoute(routeId, user.id);
   if (error || !route) return { error: error ?? 'Route not found.' };
 
   if (route.name === newName) return { success: 'Name unchanged.' };

@@ -102,6 +102,7 @@ async function setup() {
       address: `${TAG} 42 Private Lane`,
       latitude: 13.6288,
       longitude: 79.4192,
+      createdById: a.user.id,
     },
   });
   const subscription = await db.subscription.create({
@@ -123,6 +124,7 @@ async function setup() {
       address: `${TAG} 9 Second Lane`,
       latitude: 13.632,
       longitude: 79.423,
+      createdById: a.user.id,
     },
   });
   const secondSub = await db.subscription.create({
@@ -138,6 +140,7 @@ async function setup() {
   const route = await db.route.create({
     data: {
       name: `${TAG} A's round`,
+      shareCode: 'E2EROUTA',
       status: 'ACTIVE',
       createdById: a.user.id,
       driverId: a.profile.id,
@@ -213,6 +216,7 @@ async function setup() {
   const bRoute = await db.route.create({
     data: {
       name: `${TAG} B's round`,
+      shareCode: 'E2EROUTB',
       status: 'ACTIVE',
       createdById: b.user.id,
       driverId: b.profile.id,
@@ -297,6 +301,9 @@ async function destroy() {
   await db.routeRun.deleteMany({ where: { id: { in: runIds } } });
   await db.routeStop.deleteMany({ where: { routeVersionId: { in: versionIds } } });
   await db.routeVersion.deleteMany({ where: { routeId: { in: routeIds } } });
+  await db.savedRoute.deleteMany({
+    where: { OR: [{ userId: { in: ids } }, { routeId: { in: routeIds } }] },
+  });
   await db.route.deleteMany({ where: { id: { in: routeIds } } });
 
   const sessions = await db.trainingSession.findMany({

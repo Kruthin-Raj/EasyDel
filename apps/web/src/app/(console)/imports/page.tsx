@@ -1,30 +1,18 @@
 import { db } from '@/lib/db';
-import { currentUserWith } from '@/lib/permissions';
-import Forbidden from '@/components/Forbidden';
+import { requireUser } from '@/lib/auth';
+import { locationWhere } from '@/lib/scope';
 import Importer from '@/components/Importer';
 import { PageHeader, Card, Notice } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ImportsPage() {
-  const { user, can } = await currentUserWith(['import_excel']);
-
-  if (!can.import_excel) {
-    return (
-      <Forbidden
-        title="Spreadsheet import is turned off for your role"
-        reason="Bulk-importing locations from a file is restricted to administrators by default."
-        role={user.role}
-        hint="An administrator can allow it under Settings → Delivery agent permissions."
-      />
-    );
-  }
+  const user = await requireUser();
 
   // Passed to the client so duplicate detection can run during preview,
-  // before anything is written. Only the three fields needed for a distance
-  // comparison are sent — no PII beyond the location name.
+  // before anything is written. Scoped strictly to this user's locations.
   const existing = await db.deliveryLocation.findMany({
-    where: { status: { in: ['ACTIVE', 'PAUSED'] } },
+    where: { ...locationWhere(user), status: { in: ['ACTIVE', 'PAUSED'] } },
     select: { name: true, latitude: true, longitude: true },
   });
 

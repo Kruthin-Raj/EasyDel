@@ -1,9 +1,15 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { BookOpen } from 'lucide-react';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
-import { reoptimizeRouteAction, assignDriverAction } from '@/lib/actions';
+import { reoptimizeRouteAction } from '@/lib/actions';
+import { canAccessRoute, ensureRouteShareCode } from '@/lib/route-sharing';
+import { duplicateRouteAction, unsaveRouteAction } from '@/lib/share-actions';
 import LiveMap, { type MapMarker } from '@/components/Map';
+import ShareRouteCard from '@/components/ShareRouteCard';
+import ActionForm from '@/components/ActionForm';
+import Forbidden from '@/components/Forbidden';
 import { signedPhotoUrl } from '@/lib/storage';
 import { PageHeader, Card, Table, Td, Badge, EmptyState, Button, when, duration, metres } from '@/components/ui';
 
@@ -14,15 +20,13 @@ export default async function RouteDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireUser();
+  const user = await requireUser();
   const { id } = await params;
 
   const route = await db.route.findUnique({
     where: { id },
     include: {
       createdBy: true,
-      approvedBy: true,
-      driver: { include: { user: true } },
       versions: {
         orderBy: { versionNumber: 'desc' },
         include: {
@@ -37,10 +41,18 @@ export default async function RouteDetailPage({
 
   if (!route) notFound();
 
-  const drivers = await db.driverProfile.findMany({
-    where: { active: true },
-    include: { user: true },
-  });
+  if (!(await canAccessRoute(user.id, route.id))) {
+    return (
+      <Forbidden
+        title="You haven't saved this route yet"
+        reason="Routes are private until someone shares their unique code or link with you."
+        hint="Ask the creator for the route code or link, then open Join by code."
+      />
+    );
+  }
+
+  const isOwner = route.createdById === user.id;
+  const shareCode = route.shareCode ?? (await ensureRouteShareCode(route.id));
 
   const latest = route.versions[0];
   const geometry: number[][] | null = latest?.routeGeometry
@@ -105,27 +117,38 @@ export default async function RouteDetailPage({
         actions={
           <>
             <Link
+              href={`/routes/${route.id}/memorize`}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-surface-2 px-3 py-2 text-sm font-medium text-ink ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2"
+            >
+              <BookOpen className="h-4 w-4 text-accent" aria-hidden />
+              Memorize route
+            </Link>
+            <Link
               href={`/routes/${route.id}/run`}
               className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-ink transition-colors hover:bg-accent-bright"
             >
-              Run this route
+              Deliver this route
             </Link>
-            <Link
-              href={`/routes/${route.id}/edit`}
-              className="rounded-lg bg-surface-2 px-3 py-2 text-sm font-medium text-ink ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2"
-            >
-              Edit route
-            </Link>
+            {isOwner && (
+              <>
+                <Link
+                  href={`/routes/${route.id}/edit`}
+                  className="rounded-lg bg-surface-2 px-3 py-2 text-sm font-medium text-ink ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2"
+                >
+                  Edit route
+                </Link>
+                <form action={reoptimizeRouteAction}>
+                  <input type="hidden" name="routeId" value={route.id} />
+                  <Button>Re-optimise (new version)</Button>
+                </form>
+              </>
+            )}
             <Link
               href="/routes"
               className="rounded-lg bg-surface-2 px-3 py-2 text-sm font-medium text-ink ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2"
             >
-              All routes
+              My routes
             </Link>
-            <form action={reoptimizeRouteAction}>
-              <input type="hidden" name="routeId" value={route.id} />
-              <Button>Re-optimise (new version)</Button>
-            </form>
           </>
         }
       />
@@ -231,31 +254,39 @@ export default async function RouteDetailPage({
         </div>
 
         <div className="space-y-6">
-          <Card title="Driver">
-            <div className="space-y-3 p-5">
-              <p className="text-sm text-ink">
-                {route.driver
-                  ? `${route.driver.user.firstName} ${route.driver.user.lastName}`
-                  : 'Unassigned'}
-              </p>
-              <form action={assignDriverAction} className="space-y-3">
-                <input type="hidden" name="routeId" value={route.id} />
-                <select
-                  name="driverId"
-                  defaultValue={route.driverId ?? ''}
-                  className="field text-sm"
+          {shareCode && (
+            <ShareRouteCard
+              routeId={route.id}
+              routeName={route.name}
+              shareCode={shareCode}
+              isOwner={isOwner}
+            />
+          )}
+
+          {!isOwner && (
+            <Card
+              title="Saved shared route"
+              description={`Created by ${route.createdBy.firstName} ${route.createdBy.lastName}. Want to add or change stops for yourself? Make your own editable copy.`}
+            >
+              <div className="space-y-3 p-5">
+                <ActionForm
+                  action={duplicateRouteAction}
+                  submitLabel="Make my own editable copy"
+                  pendingLabel="Copying…"
                 >
-                  <option value="">Unassigned</option>
-                  {drivers.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.user.firstName} {d.user.lastName}
-                    </option>
-                  ))}
-                </select>
-                <Button variant="secondary">Update driver</Button>
-              </form>
-            </div>
-          </Card>
+                  <input type="hidden" name="routeId" value={route.id} />
+                  {shareCode && <input type="hidden" name="shareCode" value={shareCode} />}
+                </ActionForm>
+
+                <form action={unsaveRouteAction}>
+                  <input type="hidden" name="routeId" value={route.id} />
+                  <Button variant="ghost" className="w-full">
+                    Remove from my routes
+                  </Button>
+                </form>
+              </div>
+            </Card>
+          )}
 
           <Card title="Version history" description="Older versions keep their own stops.">
             <ul className="divide-y divide-line/70">

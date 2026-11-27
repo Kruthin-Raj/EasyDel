@@ -27,15 +27,18 @@ export default function GoogleSignInButton({
   text = 'Continue with Google',
   withDivider = true,
   dividerText = 'or continue with email',
+  next,
 }: {
   text?: string;
   withDivider?: boolean;
   dividerText?: string;
+  next?: string;
 }) {
+  const href = next && next !== '/' ? `/api/auth/google?next=${encodeURIComponent(next)}` : '/api/auth/google';
   return (
     <div className="w-full">
       <a
-        href="/api/auth/google"
+        href={href}
         className="group relative flex w-full items-center justify-center gap-3 rounded-lg border border-line bg-panel px-4 py-2.5 text-sm font-medium text-ink shadow-xs transition-colors hover:border-line-bright hover:bg-panel-2"
       >
         <GoogleIcon className="h-4 w-4 shrink-0 transition-transform group-hover:scale-105" />

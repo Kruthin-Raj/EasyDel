@@ -3,11 +3,11 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { db } from './db';
-import { requireAdmin, requireUser } from './auth';
-import { requireCapability, can, currentUserWith, checkpointTypesKey } from './permissions';
+import { requireUser } from './auth';
+import { requireCapability, currentUserWith, checkpointTypesKey, geofenceKey } from './permissions';
+import { allocateUniqueShareCode } from './route-sharing';
 import { optimizeRoute, refineWithOsrm, isValidCoord, haversine, type Point } from './optimize';
 import { parseMapLink, resolveShortLink } from './map-links';
-import { SETTING_DEFAULTS } from './settings';
 import type { ParsedRow } from './import-parse';
 
 /*
@@ -62,9 +62,9 @@ export async function createLocationAction(
   }
 
   // Duplicate detection — never silently create a second checkpoint on the
-  // same doorstep (spec: DUPLICATE LOCATION DETECTION).
+  // same doorstep for this user's own locations.
   const nearby = await db.deliveryLocation.findMany({
-    where: { status: { in: ['ACTIVE', 'PAUSED'] } },
+    where: { createdById: user.id, status: { in: ['ACTIVE', 'PAUSED'] } },
     select: { id: true, name: true, latitude: true, longitude: true },
   });
   const dup = nearby.find((l) => haversine({ lat, lng }, { lat: l.latitude, lng: l.longitude }) < 60);
@@ -87,6 +87,7 @@ export async function createLocationAction(
       notes: String(formData.get('notes') ?? '') || null,
       entranceInstructions: String(formData.get('entranceInstructions') ?? '') || null,
       securityInstructions: String(formData.get('securityInstructions') ?? '') || null,
+      createdById: user.id,
     },
   });
 
@@ -119,9 +120,9 @@ export async function createLocationFromLinkAction(
   const lat = parsed.latitude;
   const lng = parsed.longitude;
 
-  // Duplicate detection
+  // Duplicate detection scoped to this user's own locations
   const nearby = await db.deliveryLocation.findMany({
-    where: { status: { in: ['ACTIVE', 'PAUSED'] } },
+    where: { createdById: user.id, status: { in: ['ACTIVE', 'PAUSED'] } },
     select: { id: true, name: true, latitude: true, longitude: true },
   });
   const dup = nearby.find((l) => haversine({ lat, lng }, { lat: l.latitude, lng: l.longitude }) < 60);
@@ -144,6 +145,7 @@ export async function createLocationFromLinkAction(
       notes: String(formData.get('notes') ?? '') || null,
       entranceInstructions: String(formData.get('entranceInstructions') ?? '') || null,
       securityInstructions: String(formData.get('securityInstructions') ?? '') || null,
+      createdById: user.id,
     },
   });
 
@@ -178,9 +180,11 @@ export async function updateLocationAction(
   }
 
   const existing = await db.deliveryLocation.findUnique({ where: { id } });
-  if (!existing) return { error: 'Location not found.' };
+  if (!existing || existing.createdById !== user.id) {
+    return { error: 'Location not found or belongs to another user.' };
+  }
 
-  const updated = await db.deliveryLocation.update({
+  await db.deliveryLocation.update({
     where: { id },
     data: {
       name,
@@ -205,7 +209,7 @@ export async function updateLocationAction(
 }
 
 export async function setLocationStatusAction(formData: FormData) {
-  const user = await requireAdmin();
+  const user = await requireUser();
   const id = String(formData.get('id') ?? '');
   const status = String(formData.get('status') ?? '');
   const reason = String(formData.get('reason') ?? '') || null;
@@ -215,7 +219,7 @@ export async function setLocationStatusAction(formData: FormData) {
   if (!id || !allowed.includes(status)) return;
 
   const before = await db.deliveryLocation.findUnique({ where: { id } });
-  if (!before) return;
+  if (!before || before.createdById !== user.id) return;
 
   await db.deliveryLocation.update({
     where: { id },
@@ -239,7 +243,7 @@ export async function moveLocationAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const user = await requireAdmin();
+  const user = await requireUser();
   const id = String(formData.get('id') ?? '');
   const lat = Number(formData.get('latitude'));
   const lng = Number(formData.get('longitude'));
@@ -248,7 +252,9 @@ export async function moveLocationAction(
   if (!isValidCoord(lat, lng)) return { error: 'Invalid coordinates — nothing was changed.' };
 
   const before = await db.deliveryLocation.findUnique({ where: { id } });
-  if (!before) return { error: 'Location not found.' };
+  if (!before || before.createdById !== user.id) {
+    return { error: 'Location not found or belongs to another user.' };
+  }
 
   const movedBy = Math.round(
     haversine({ lat: before.latitude, lng: before.longitude }, { lat, lng }),
@@ -276,131 +282,12 @@ export async function moveLocationAction(
   return { success: `Location moved ${movedBy} m.` };
 }
 
-// ----------------------------------------------------------- people ---------
-
-export async function createUserAction(
-  _prev: any,
-  formData: FormData,
-): Promise<ActionState & { state?: 'OTP_REQUIRED'; email?: string; formData?: any }> {
-  const admin = await requireAdmin();
-
-  const email = String(formData.get('email') ?? '').trim().toLowerCase();
-  const firstName = String(formData.get('firstName') ?? '').trim();
-  const lastName = String(formData.get('lastName') ?? '').trim();
-  const role = String(formData.get('role') ?? '');
-  const vehicleType = String(formData.get('vehicleType') ?? '') || null;
-
-  if (!email || !firstName || !lastName) return { error: 'Email, first and last name are required.' };
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { error: 'That email address is not valid.' };
-  if (!['ADMIN', 'MENTOR', 'DELIVERY_AGENT'].includes(role)) return { error: 'Pick a valid role.' };
-
-  const existing = await db.user.findUnique({ where: { email }, include: { driverProfile: true, mentorProfile: true } });
-  
-  if (existing) {
-    if (role === 'DELIVERY_AGENT' && existing.driverProfile) return { error: `User is already a delivery agent.` };
-    if (role === 'MENTOR' && existing.mentorProfile) return { error: `User is already a mentor.` };
-
-    // Trigger OTP flow for converting existing user to a new role
-    const { issueVerificationCode } = await import('./tokens');
-    const { sendMail, verificationEmail } = await import('./mailer');
-    
-    const code = await issueVerificationCode(email);
-    await sendMail({
-      to: email,
-      ...verificationEmail(code),
-    });
-
-    return { 
-      state: 'OTP_REQUIRED', 
-      email,
-      success: `An OTP has been sent to ${email}. Ask the driver for it to verify.`,
-      formData: { email, firstName, lastName, role, vehicleType }
-    };
-  }
-
-  const user = await db.user.create({
-    data: { email, firstName, lastName, role: role as never },
-  });
-
-  if (role === 'DELIVERY_AGENT') {
-    await db.driverProfile.create({ data: { userId: user.id, vehicleType } });
-  } else if (role === 'MENTOR') {
-    await db.mentorProfile.create({ data: { userId: user.id } });
-  }
-
-  await audit(admin.id, 'USER_CREATED', 'User', user.id, { newValue: `${email} (${role})` });
-  revalidatePath('/drivers');
-  revalidatePath('/mentors');
-  revalidatePath('/');
-  return { success: `Created ${firstName} ${lastName}.` };
-}
-
-export async function verifyDriverAddAction(
-  _prev: ActionState,
-  formData: FormData,
-): Promise<ActionState> {
-  const admin = await requireAdmin();
-  
-  const email = String(formData.get('email') ?? '').trim().toLowerCase();
-  const otp = String(formData.get('otp') ?? '').trim();
-  const role = String(formData.get('role') ?? '');
-  const vehicleType = String(formData.get('vehicleType') ?? '') || null;
-
-  if (!email || !otp) return { error: 'Email and OTP are required.' };
-
-  const { verifyCode } = await import('./tokens');
-  const outcome = await verifyCode(email, otp);
-  
-  if (!outcome.ok) {
-    if (outcome.reason === 'expired') return { error: 'That code has expired. Request a new one.' };
-    if (outcome.reason === 'too-many-attempts') return { error: 'Too many incorrect attempts. Request a new code.' };
-    if (outcome.reason === 'incorrect') return { error: 'Incorrect code.' };
-    return { error: 'Code not found or already used.' };
-  }
-
-  const user = await db.user.findUnique({ where: { email } });
-  if (!user) return { error: 'User not found.' };
-
-  if (role === 'DELIVERY_AGENT') {
-    await db.driverProfile.create({ data: { userId: user.id, vehicleType } });
-  } else if (role === 'MENTOR') {
-    await db.mentorProfile.create({ data: { userId: user.id } });
-  }
-
-  // Update role to include the new capability if it wasn't already ADMIN
-  if (user.role !== 'ADMIN') {
-    await db.user.update({ where: { id: user.id }, data: { role: role as never } });
-  }
-
-  await audit(admin.id, 'USER_ROLE_ADDED', 'User', user.id, { newValue: `${email} (${role}) via OTP` });
-  
-  revalidatePath('/drivers');
-  revalidatePath('/mentors');
-  revalidatePath('/');
-  return { success: `Successfully assigned ${role} to ${user.firstName}.` };
-}
-
-export async function toggleDriverActiveAction(formData: FormData) {
-  const admin = await requireAdmin();
-  const id = String(formData.get('id') ?? '');
-  const profile = await db.driverProfile.findUnique({ where: { id } });
-  if (!profile) return;
-
-  await db.driverProfile.update({ where: { id }, data: { active: !profile.active } });
-  await audit(admin.id, profile.active ? 'DRIVER_DEACTIVATED' : 'DRIVER_ACTIVATED', 'DriverProfile', id, {
-    oldValue: String(profile.active),
-    newValue: String(!profile.active),
-  });
-  revalidatePath('/drivers');
-  revalidatePath('/');
-}
-
 // ----------------------------------------------------------- routes ---------
 
 /**
  * Builds a route from the currently deliverable locations and optimises the
  * stop order. Only ACTIVE locations with at least one ACTIVE subscription are
- * included — the spec's core business rule.
+ * included — the core business rule.
  */
 export async function createRouteAction(
   _prev: ActionState,
@@ -411,13 +298,12 @@ export async function createRouteAction(
   const name = String(formData.get('name') ?? '').trim();
   if (!name) return { error: 'Route name is required.' };
 
-  const driverId = String(formData.get('driverId') ?? '') || null;
   const selected = formData.getAll('locationIds').map(String).filter(Boolean);
 
   const locations = await db.deliveryLocation.findMany({
     where: selected.length
-      ? { id: { in: selected } }
-      : { status: 'ACTIVE', subscriptions: { some: { status: 'ACTIVE' } } },
+      ? { id: { in: selected }, createdById: user.id }
+      : { createdById: user.id, status: 'ACTIVE', subscriptions: { some: { status: 'ACTIVE' } } },
     select: { id: true, name: true, latitude: true, longitude: true },
   });
 
@@ -440,14 +326,15 @@ export async function createRouteAction(
   const stops: Point[] = locations.map((l) => ({ id: l.id, name: l.name, lat: l.latitude, lng: l.longitude }));
 
   const optimized = await refineWithOsrm(optimizeRoute(start, end, stops));
+  const shareCode = await allocateUniqueShareCode();
 
   const route = await db.route.create({
     data: {
       name,
+      shareCode,
       status: 'ACTIVE',
       createdById: user.id,
       approvedById: user.id,
-      driverId,
     },
   });
 
@@ -483,13 +370,16 @@ export async function createRouteAction(
   redirect(`/routes/${route.id}`);
 }
 
-/** Creates a NEW version rather than mutating history (spec: ROUTE VERSIONING). */
+/** Creates a NEW version rather than mutating history (ROUTE VERSIONING). */
 export async function reoptimizeRouteAction(formData: FormData) {
-  // Re-optimising is governed by the agents_can_optimize_routes setting rather
-  // than being admin-only: a driver who built the round should be able to
-  // reshuffle it without waiting for someone else.
   const user = await requireCapability('optimize_routes');
   const routeId = String(formData.get('routeId') ?? '');
+
+  const route = await db.route.findUnique({
+    where: { id: routeId },
+    select: { id: true, createdById: true },
+  });
+  if (!route || route.createdById !== user.id) return;
 
   const latest = await db.routeVersion.findFirst({
     where: { routeId },
@@ -559,17 +449,6 @@ export async function reoptimizeRouteAction(formData: FormData) {
   revalidatePath(`/routes/${routeId}`);
 }
 
-export async function assignDriverAction(formData: FormData) {
-  const user = await requireAdmin();
-  const routeId = String(formData.get('routeId') ?? '');
-  const driverId = String(formData.get('driverId') ?? '') || null;
-
-  await db.route.update({ where: { id: routeId }, data: { driverId } });
-  await audit(user.id, 'ROUTE_DRIVER_ASSIGNED', 'Route', routeId, { newValue: driverId ?? 'unassigned' });
-  revalidatePath('/routes');
-  revalidatePath(`/routes/${routeId}`);
-}
-
 // ----------------------------------------------------------- imports --------
 
 /** Commits rows that the user reviewed in the import preview. */
@@ -577,7 +456,7 @@ export async function commitImportAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const user = await requireAdmin();
+  const user = await requireUser();
   const payload = String(formData.get('rows') ?? '');
   if (!payload) return { error: 'Nothing to import.' };
 
@@ -604,6 +483,7 @@ export async function commitImportAction(
         latitude: r.latitude as number,
         longitude: r.longitude as number,
         notes: r.notes,
+        createdById: user.id,
       },
     });
     if (r.quantity && r.quantity > 0) {
@@ -636,61 +516,32 @@ export async function saveSettingsAction(
   formData: FormData,
 ): Promise<ActionState> {
   const user = await requireUser();
-  const isAdmin = user.role === 'ADMIN';
-  const canEditDropdown = await can(user, 'edit_dropdown');
-
-  if (!isAdmin && !canEditDropdown) {
-    return { error: 'Forbidden.' };
-  }
 
   const geofence = Number(formData.get('delivery_geofence_metres'));
-  if (isAdmin && (!Number.isFinite(geofence) || geofence < 10 || geofence > 5000)) {
+  if (!Number.isFinite(geofence) || geofence < 10 || geofence > 5000) {
     return { error: 'Delivery geofence must be between 10 and 5000 metres.' };
   }
 
-  for (const key of Object.keys(SETTING_DEFAULTS)) {
-    if (!isAdmin && key !== 'checkpoint_type_options') continue;
+  const packageTypes = String(formData.get('checkpoint_type_options') ?? '');
 
-    const raw = formData.get(key);
-    let value = '';
-    if (key === 'delivery_geofence_metres') {
-      value = String(geofence);
-    } else if (key === 'checkpoint_type_options') {
-      value = String(raw ?? '');
-    } else {
-      value = raw === 'on' ? 'true' : 'false';
-    }
+  await db.setting.upsert({
+    where: { key: checkpointTypesKey(user.id) },
+    update: { value: packageTypes },
+    create: { key: checkpointTypesKey(user.id), value: packageTypes },
+  });
 
-    /*
-     * An agent's package-type list is written to their own namespaced key.
-     *
-     * `checkpoint_type_options` is one global row, so an agent saving here used
-     * to replace the list for every other agent — the dropdown one agent
-     * edited appeared in everybody's. Admins still write the shared row, which
-     * remains the default for anyone who has not customised theirs.
-     */
-    const targetKey =
-      key === 'checkpoint_type_options' && !isAdmin ? checkpointTypesKey(user.id) : key;
+  await db.setting.upsert({
+    where: { key: geofenceKey(user.id) },
+    update: { value: String(geofence) },
+    create: { key: geofenceKey(user.id), value: String(geofence) },
+  });
 
-    await db.setting.upsert({
-      where: { key: targetKey },
-      update: { value },
-      create: { key: targetKey, value },
-    });
-  }
-
-  await audit(
-    user.id,
-    'SETTINGS_UPDATED',
-    'Setting',
-    isAdmin ? 'global' : checkpointTypesKey(user.id),
-  );
+  await audit(user.id, 'SETTINGS_UPDATED', 'Setting', user.id);
   revalidatePath('/settings');
   revalidatePath('/record');
+  revalidatePath('/routes');
   return {
-    success: isAdmin
-      ? 'Settings saved.'
-      : 'Saved. Your package types are yours alone — other agents keep theirs.',
+    success: 'Preferences saved.',
   };
 }
 
@@ -701,6 +552,9 @@ export async function setIssueStatusAction(formData: FormData) {
   const id = String(formData.get('id') ?? '');
   const status = String(formData.get('status') ?? '');
   if (!['OPEN', 'RESOLVED'].includes(status)) return;
+
+  const existing = await db.issue.findUnique({ where: { id }, select: { reportedBy: true } });
+  if (!existing || existing.reportedBy !== user.id) return;
 
   await db.issue.update({ where: { id }, data: { status } });
   await audit(user.id, status === 'RESOLVED' ? 'ISSUE_RESOLVED' : 'ISSUE_REOPENED', 'Issue', id, {

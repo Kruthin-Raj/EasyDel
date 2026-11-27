@@ -2,7 +2,7 @@
 
 import { redirect } from 'next/navigation';
 import { db } from './db';
-import { createSession, destroySession, SELF_SIGNUP_ROLE } from './auth';
+import { createSession, destroySession, safeNextPath, SELF_SIGNUP_ROLE } from './auth';
 import { hashPassword, verifyPassword, validatePasswordStrength } from './password';
 import {
   issueVerificationCode,
@@ -98,6 +98,8 @@ export async function signUpAction(_prev: AuthState, formData: FormData): Promis
   const confirm = String(formData.get('confirmPassword') ?? '');
   const firstName = String(formData.get('firstName') ?? '').trim();
   const lastName = String(formData.get('lastName') ?? '').trim();
+  const next = safeNextPath(formData.get('next'));
+  const nextParam = next !== '/' ? `&next=${encodeURIComponent(next)}` : '';
 
   if (!firstName) return { error: 'First name is required.' };
   if (!EMAIL_RE.test(email)) return { error: 'Enter a valid email address.' };
@@ -128,7 +130,7 @@ export async function signUpAction(_prev: AuthState, formData: FormData): Promis
     });
     const sent = await deliverCode(email);
     if (sent?.error) return sent;
-    redirect(`/verify?email=${encodeURIComponent(email)}&resumed=1`);
+    redirect(`/verify?email=${encodeURIComponent(email)}&resumed=1${nextParam}`);
   }
 
   await db.user.create({
@@ -145,7 +147,7 @@ export async function signUpAction(_prev: AuthState, formData: FormData): Promis
   const sent = await deliverCode(email);
   if (sent?.error) return sent;
 
-  redirect(`/verify?email=${encodeURIComponent(email)}`);
+  redirect(`/verify?email=${encodeURIComponent(email)}${nextParam}`);
 }
 
 // -------------------------------------------------------- verify email ------
@@ -153,6 +155,7 @@ export async function signUpAction(_prev: AuthState, formData: FormData): Promis
 export async function verifyOtpAction(_prev: AuthState, formData: FormData): Promise<AuthState> {
   const email = normaliseEmail(formData.get('email'));
   const code = String(formData.get('token') ?? '').replace(/\D/g, '');
+  const next = safeNextPath(formData.get('next'));
 
   if (!EMAIL_RE.test(email)) {
     return { error: 'Missing email address. Start again from sign up.', email };
@@ -179,7 +182,7 @@ export async function verifyOtpAction(_prev: AuthState, formData: FormData): Pro
   });
 
   await createSession(user.id);
-  redirect('/');
+  redirect(next);
 }
 
 export async function resendOtpAction(_prev: AuthState, formData: FormData): Promise<AuthState> {
@@ -215,6 +218,7 @@ export async function resendOtpAction(_prev: AuthState, formData: FormData): Pro
 export async function loginAction(_prev: AuthState, formData: FormData): Promise<AuthState> {
   const email = normaliseEmail(formData.get('email'));
   const password = String(formData.get('password') ?? '');
+  const next = safeNextPath(formData.get('next'));
 
   if (!email || !password) return { error: 'Email and password are required.' };
 
@@ -233,11 +237,12 @@ export async function loginAction(_prev: AuthState, formData: FormData): Promise
   // rather than refusing with a dead end.
   if (!user.emailVerified) {
     await deliverCode(email);
-    redirect(`/verify?email=${encodeURIComponent(email)}&unverified=1`);
+    const nextParam = next !== '/' ? `&next=${encodeURIComponent(next)}` : '';
+    redirect(`/verify?email=${encodeURIComponent(email)}&unverified=1${nextParam}`);
   }
 
   await createSession(user.id);
-  redirect('/');
+  redirect(next);
 }
 
 export async function logoutAction() {

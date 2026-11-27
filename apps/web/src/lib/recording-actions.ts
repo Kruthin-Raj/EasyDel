@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { db } from './db';
 import { requireUser } from './auth';
 import { requireCapability } from './permissions';
+import { allocateUniqueShareCode } from './route-sharing';
 import { parseNameOptions } from './name-options';
 import { uploadPhoto, ensureBucket } from './storage';
 import { isValidCoord, haversine, optimizeRoute, refineWithOsrm, type Point } from './optimize';
@@ -238,7 +239,7 @@ export async function toggleCheckpointCompleteAction(formData: FormData) {
   if (!checkpoint) return;
 
   const session = checkpoint.trainingSession;
-  if (session.recordedById !== user.id && session.traineeId !== user.id && user.role !== 'ADMIN') {
+  if (session.recordedById !== user.id && session.traineeId !== user.id) {
     return;
   }
 
@@ -277,11 +278,7 @@ export async function updateCheckpointAction(
   if (session.status !== 'RECORDING') {
     return { error: 'This round is finished, so its checkpoints can no longer be edited.' };
   }
-  if (
-    session.recordedById !== user.id &&
-    session.traineeId !== user.id &&
-    user.role !== 'ADMIN'
-  ) {
+  if (session.recordedById !== user.id && session.traineeId !== user.id) {
     return { error: 'This is not your recording session.' };
   }
 
@@ -330,11 +327,7 @@ export async function updateNameOptionsAction(
   });
   if (!session) return { error: 'That recording session no longer exists.' };
   if (session.status !== 'RECORDING') return { error: 'This round is already finished.' };
-  if (
-    session.recordedById !== user.id &&
-    session.traineeId !== user.id &&
-    user.role !== 'ADMIN'
-  ) {
+  if (session.recordedById !== user.id && session.traineeId !== user.id) {
     return { error: 'This is not your recording session.' };
   }
 
@@ -377,7 +370,7 @@ export async function deleteCheckpointAction(formData: FormData) {
   // Only removable while still recording — a finished session is a record of
   // what happened and should not be quietly edited.
   if (session.status !== 'RECORDING') return;
-  if (session.recordedById !== user.id && session.traineeId !== user.id && user.role !== 'ADMIN') {
+  if (session.recordedById !== user.id && session.traineeId !== user.id) {
     return;
   }
 
@@ -396,7 +389,7 @@ export async function endRecordingAction(_prev: RecState, formData: FormData): P
     include: { checkpoints: true },
   });
   if (!session) return { error: 'That recording session no longer exists.' };
-  if (session.recordedById !== user.id && session.traineeId !== user.id && user.role !== 'ADMIN') {
+  if (session.recordedById !== user.id && session.traineeId !== user.id) {
     return { error: 'This is not your recording session.' };
   }
   if (session.status !== 'RECORDING') return { error: 'This session is already finished.' };
@@ -435,7 +428,7 @@ export async function abandonRecordingAction(formData: FormData) {
     select: { recordedById: true, traineeId: true },
   });
   if (!session) return;
-  if (session.recordedById !== user.id && session.traineeId !== user.id && user.role !== 'ADMIN') {
+  if (session.recordedById !== user.id && session.traineeId !== user.id) {
     return;
   }
 
@@ -468,6 +461,9 @@ export async function generateRouteFromSessionAction(
     include: { checkpoints: { orderBy: { sequence: 'asc' } } },
   });
   if (!session) return { error: 'That session no longer exists.' };
+  if (session.recordedById !== user.id && session.traineeId !== user.id) {
+    return { error: 'This is not your recording session.' };
+  }
   if (session.checkpoints.length === 0) {
     return { error: 'This session has no checkpoints, so there is nothing to turn into a route.' };
   }
@@ -478,7 +474,7 @@ export async function generateRouteFromSessionAction(
   }
 
   const existing = await db.deliveryLocation.findMany({
-    where: { status: { in: ['ACTIVE', 'PAUSED'] } },
+    where: { createdById: user.id, status: { in: ['ACTIVE', 'PAUSED'] } },
     // `name` is needed as well as the position: reuse requires both.
     select: { id: true, name: true, latitude: true, longitude: true },
   });
@@ -538,6 +534,7 @@ export async function generateRouteFromSessionAction(
         unit: checkpoint.unit,
         entranceInstructions: checkpoint.entranceInstructions,
         photo: checkpoint.photoUrl,
+        createdById: user.id,
       },
     });
     existing.push({
@@ -600,17 +597,15 @@ export async function generateRouteFromSessionAction(
 
   const optimized = await refineWithOsrm(optimizeRoute(start, start, stops));
 
-  // Assign the route to whoever recorded it, when they are a driver, so it
-  // appears as theirs and can be run without an admin step.
-  const driverProfile = await db.driverProfile.findUnique({ where: { userId: user.id } });
+  const shareCode = await allocateUniqueShareCode();
 
   const route = await db.route.create({
     data: {
       name: session.routeName,
+      shareCode,
       status: 'ACTIVE',
       createdById: user.id,
-      approvedById: user.role === 'ADMIN' ? user.id : null,
-      driverId: driverProfile?.id ?? null,
+      approvedById: user.id,
     },
   });
 

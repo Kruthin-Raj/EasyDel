@@ -7,7 +7,6 @@ import {
   Radar,
   Building2,
   Route as RouteIcon,
-  Users,
   GraduationCap,
   Upload,
   History,
@@ -17,44 +16,38 @@ import {
   Smartphone,
   CircleDot,
   Link2,
+  Share2,
 } from 'lucide-react';
 import { logoutAction } from '@/lib/auth-actions';
 
 /*
- * Navigation is grouped by what the operator is doing, not alphabetically:
- * what's happening now, what it runs on, who runs it, then the back office.
- * An eleven-item flat list is a wall; four short groups can be scanned.
+ * Navigation grouped by workflow: creating & memorizing routes, managing
+ * locations, and reviewing deliveries/activity.
  */
 const GROUPS: { label: string; items: { name: string; href: string; icon: typeof Radar }[] }[] = [
   {
-    label: 'Operations',
+    label: 'Routes & Learning',
     items: [
       { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+      { name: 'My routes', href: '/routes', icon: RouteIcon },
+      { name: 'Join by code', href: '/share', icon: Share2 },
       { name: 'Record a route', href: '/record', icon: CircleDot },
-      { name: 'Live tracking', href: '/live', icon: Radar },
+      { name: 'Route from links', href: '/routes/from-links', icon: Link2 },
+      { name: 'Recorded rounds', href: '/training-routes', icon: GraduationCap },
     ],
   },
   {
-    label: 'Network',
+    label: 'Locations',
     items: [
       { name: 'Locations', href: '/locations', icon: Building2 },
-      { name: 'Routes', href: '/routes', icon: RouteIcon },
-      { name: 'Route from links', href: '/routes/from-links', icon: Link2 },
       { name: 'Imports', href: '/imports', icon: Upload },
     ],
   },
   {
-    label: 'People',
-    items: [
-      { name: 'Drivers', href: '/drivers', icon: Users },
-      { name: 'Mentors', href: '/mentors', icon: GraduationCap },
-      { name: 'Training routes', href: '/training-routes', icon: GraduationCap },
-    ],
-  },
-  {
-    label: 'Records',
+    label: 'Activity',
     items: [
       { name: 'Delivery history', href: '/delivery-history', icon: History },
+      { name: 'Live GPS', href: '/live', icon: Radar },
       { name: 'Reports', href: '/reports', icon: BarChart3 },
       { name: 'Settings', href: '/settings', icon: Sliders },
     ],
@@ -175,8 +168,8 @@ export default function Sidebar({
             <span className="block truncate text-sm font-medium text-ink">
               {user.firstName} {user.lastName}
             </span>
-            <span className="eyebrow block truncate text-ink-faint">
-              {user.role.replace(/_/g, ' ')}
+            <span className="block truncate text-xs text-ink-faint">
+              {user.email}
             </span>
           </span>
         </div>

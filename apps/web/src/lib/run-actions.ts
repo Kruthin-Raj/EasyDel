@@ -4,7 +4,8 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { db } from './db';
 import { requireUser } from './auth';
-import { loadSettings } from './permissions';
+import { loadSettings, parseGeofenceMetres } from './permissions';
+import { canAccessRoute } from './route-sharing';
 import { isValidCoord, haversine, optimizeRoute, type Point } from './optimize';
 import { SKIP_REASONS } from './run-constants';
 
@@ -31,13 +32,13 @@ function position(form: FormData) {
 }
 
 /** Loads a run and checks the caller owns it. */
-async function ownedRun(runId: string, userId: string, role: string) {
+async function ownedRun(runId: string, userId: string) {
   const run = await db.routeRun.findUnique({
     where: { id: runId },
     include: { routeVersion: { include: { route: true } } },
   });
   if (!run) return null;
-  if (run.driverId !== userId && role !== 'ADMIN') return null;
+  if (run.driverId !== userId) return null;
   return run;
 }
 
@@ -50,7 +51,6 @@ export async function startRunAction(_prev: RunState, formData: FormData): Promi
   const route = await db.route.findUnique({
     where: { id: routeId },
     include: {
-      driver: true,
       versions: { orderBy: { versionNumber: 'desc' }, take: 1, include: { stops: true } },
     },
   });
@@ -61,36 +61,9 @@ export async function startRunAction(_prev: RunState, formData: FormData): Promi
     return { error: 'This route has no stops yet, so there is nothing to deliver.' };
   }
 
-  /*
-   * Who may run this route.
-   *
-   * Assignment alone was too narrow: a driver who recorded the round by
-   * driving it, or built it from their own pasted map links, was told to go
-   * ask an administrator to assign them their own route. Creating a route is
-   * as strong a claim to it as being assigned one.
-   *
-   * An unassigned route is open to any driver — nobody is being displaced.
-   */
-  const assignedUserId = route.driver
-    ? (await db.driverProfile.findUnique({
-        where: { id: route.driver.id },
-        select: { userId: true },
-      }))?.userId
-    : null;
-
-  const isAdmin = user.role === 'ADMIN';
-  const isAssignee = assignedUserId === user.id;
-  const isCreator = route.createdById === user.id;
-
-  /*
-   * "Anyone may run an unassigned route" used to be allowed here. It has been
-   * dropped so this matches what the Routes list shows: every route starts
-   * unassigned, so that rule let one agent start a round another agent had
-   * just built. Creating a route is the claim on it.
-   */
-  if (!isAdmin && !isAssignee && !isCreator) {
+  if (!(await canAccessRoute(user.id, routeId))) {
     return {
-      error: `This route is assigned to another driver. Ask an administrator to reassign it, or run one of your own.`,
+      error: 'Save this route using its share code or link before starting a delivery run.',
     };
   }
 
@@ -210,7 +183,7 @@ async function recordOutcome(
     return { error: 'That is not a valid reason.' };
   }
 
-  const run = await ownedRun(runId, user.id, user.role);
+  const run = await ownedRun(runId, user.id);
   if (!run) return { error: 'That run is not yours, or no longer exists.' };
   if (run.status !== 'IN_PROGRESS') return { error: 'This run has already been finished.' };
 
@@ -230,7 +203,7 @@ async function recordOutcome(
   // Geofence is a warning, not a block: a driver standing in the wrong place
   // still needs to record what happened, and refusing would push them to lie.
   const settings = await loadSettings();
-  const fence = Number(settings.delivery_geofence_metres) || 150;
+  const fence = parseGeofenceMetres(settings, user.id);
   const farAway = distance !== null && distance > fence;
 
   if (farAway && formData.get('confirmDistance') !== 'yes') {
@@ -256,7 +229,7 @@ async function recordOutcome(
 
   if (subscriptions.length === 0) {
     return {
-      error: `${stop.deliveryLocation.name} has no active subscription, so there is nothing to deliver. Ask an administrator to add one.`,
+      error: `${stop.deliveryLocation.name} has no active delivery item yet.`,
     };
   }
 
@@ -278,7 +251,7 @@ async function recordOutcome(
     })),
   });
 
-  if (notes) {
+  if (notes && stop.deliveryLocation.createdById === user.id) {
     await db.deliveryLocation.update({
       where: { id: stop.deliveryLocationId },
       data: { nextVisitNote: notes },
@@ -323,7 +296,7 @@ export async function undoStopOutcomeAction(formData: FormData) {
   const runId = String(formData.get('runId') ?? '');
   const stopId = String(formData.get('stopId') ?? '');
 
-  const run = await ownedRun(runId, user.id, user.role);
+  const run = await ownedRun(runId, user.id);
   if (!run || run.status !== 'IN_PROGRESS') return;
 
   const stop = await db.routeStop.findUnique({
@@ -349,14 +322,14 @@ export async function clearNextVisitNoteAction(formData: FormData) {
   const runId = String(formData.get('runId') ?? '');
   const stopId = String(formData.get('stopId') ?? '');
 
-  const run = await ownedRun(runId, user.id, user.role);
+  const run = await ownedRun(runId, user.id);
   if (!run || run.status !== 'IN_PROGRESS') return;
 
   const stop = await db.routeStop.findUnique({
     where: { id: stopId },
-    select: { deliveryLocationId: true },
+    select: { deliveryLocationId: true, deliveryLocation: { select: { createdById: true } } },
   });
-  if (!stop) return;
+  if (!stop || stop.deliveryLocation.createdById !== user.id) return;
 
   await db.deliveryLocation.update({
     where: { id: stop.deliveryLocationId },
@@ -417,7 +390,7 @@ export async function reportIssueAction(_prev: RunState, formData: FormData): Pr
     if (run) revalidatePath(`/routes/${run.routeVersion.routeId}/run`);
   }
 
-  return { success: 'Issue reported. An administrator will see it in Delivery history.' };
+  return { success: 'Issue reported. Saved to your Delivery history.' };
 }
 
 /**
@@ -431,7 +404,7 @@ export async function cancelRunAction(formData: FormData) {
   const user = await requireUser();
   const runId = String(formData.get('runId') ?? '');
 
-  const run = await ownedRun(runId, user.id, user.role);
+  const run = await ownedRun(runId, user.id);
   if (!run || run.status !== 'IN_PROGRESS') return;
 
   const recorded = await db.delivery.count({ where: { routeRunId: runId } });
@@ -462,7 +435,7 @@ export async function endRunAction(_prev: RunState, formData: FormData): Promise
   const user = await requireUser();
   const runId = String(formData.get('runId') ?? '');
 
-  const run = await ownedRun(runId, user.id, user.role);
+  const run = await ownedRun(runId, user.id);
   if (!run) return { error: 'That run is not yours, or no longer exists.' };
   if (run.status !== 'IN_PROGRESS') return { error: 'This run is already finished.' };
 

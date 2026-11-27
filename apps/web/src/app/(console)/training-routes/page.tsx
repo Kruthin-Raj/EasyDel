@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { trainingWhere } from '@/lib/scope';
-import { PageHeader, Card, Table, Td, EmptyState, Notice, when, duration, metres } from '@/components/ui';
+import { PageHeader, Card, Table, Td, EmptyState, when, duration, metres } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,15 +24,23 @@ export default async function TrainingRoutesPage() {
   return (
     <>
       <PageHeader
-        title="Training routes"
-        subtitle="Recorded mentor-and-trainee sessions, with the checkpoints captured in the field."
+        title="Recorded rounds"
+        subtitle="Rounds recorded by driving them once, ready to turn into shareable delivery routes."
+        actions={
+          <Link
+            href="/record"
+            className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-ink transition-colors hover:bg-accent-bright"
+          >
+            Record new round
+          </Link>
+        }
       />
 
       {sessions.length === 0 ? (
         <Card>
           <EmptyState
-            message="No training sessions recorded."
-            hint="Sessions are created from the mobile app in training mode."
+            message="No recorded rounds yet."
+            hint="Tap Record new round to drive a beat once and save every stop automatically."
           />
         </Card>
       ) : (
@@ -49,7 +57,11 @@ export default async function TrainingRoutesPage() {
                   Open
                 </Link>
               }
-              description={`${s.mentor.firstName} ${s.mentor.lastName} training ${s.trainee.firstName} ${s.trainee.lastName}`}
+              description={
+                s.mentorId !== s.traineeId
+                  ? `${s.mentor.firstName} ${s.mentor.lastName} · ${s.trainee.firstName} ${s.trainee.lastName}`
+                  : `Recorded by ${s.trainee.firstName} ${s.trainee.lastName}`
+              }
             >
               <div className="grid grid-cols-2 gap-px border-b border-line bg-line lg:grid-cols-4">
                 {[
@@ -109,11 +121,6 @@ export default async function TrainingRoutesPage() {
           ))}
         </div>
       )}
-
-      <Notice tone="warning">
-        Checkpoint photos and the recorded GPS track are not shown yet — photo upload to Supabase
-        Storage and track replay are still to be built. See the README TODO.
-      </Notice>
     </>
   );
 }

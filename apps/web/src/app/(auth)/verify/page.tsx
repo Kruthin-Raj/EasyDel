@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { verifyOtpAction } from '@/lib/auth-actions';
+import { safeNextPath } from '@/lib/auth';
 import { smtpConfigured } from '@/lib/mailer';
 import ResendCode from '@/components/ResendCode';
 import ActionForm from '@/components/ActionForm';
@@ -11,9 +12,10 @@ export const dynamic = 'force-dynamic';
 export default async function VerifyPage({
   searchParams,
 }: {
-  searchParams: Promise<{ email?: string; resumed?: string; unverified?: string }>;
+  searchParams: Promise<{ email?: string; resumed?: string; unverified?: string; next?: string }>;
 }) {
-  const { email = '', resumed, unverified } = await searchParams;
+  const { email = '', resumed, unverified, next: rawNext } = await searchParams;
+  const next = safeNextPath(rawNext);
   const noMail = !smtpConfigured();
 
   if (!email) {
@@ -80,6 +82,7 @@ export default async function VerifyPage({
         fullWidthSubmit
       >
         <input type="hidden" name="email" value={email} />
+        <input type="hidden" name="next" value={next} />
 
         <label className="block">
           <span className="mb-1.5 block text-sm font-medium text-ink">Verification code</span>

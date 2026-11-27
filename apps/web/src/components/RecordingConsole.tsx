@@ -7,6 +7,7 @@ import RecordMap from '@/components/RecordMap';
 import CheckpointEditor from '@/components/CheckpointEditor';
 import { downscaleImage, readableSize } from '@/lib/downscale';
 import {
+  type RecState,
   addCheckpointAction,
   appendTrackAction,
   toggleCheckpointCompleteAction,
@@ -96,6 +97,7 @@ export default function RecordingConsole({
   const [fix, setFix] = useState<Fix | null>(null);
   const [geoError, setGeoError] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [openedAfterAdd, setOpenedAfterAdd] = useState<RecState | undefined>(undefined);
   const [elapsed, setElapsed] = useState('');
   const pending = useRef<number[][]>([]);
   const [photoNote, setPhotoNote] = useState<string | null>(null);
@@ -151,8 +153,8 @@ export default function RecordingConsole({
   // --- live position -------------------------------------------------------
   useEffect(() => {
     if (!('geolocation' in navigator)) {
-      setGeoError('This browser cannot report your location.');
-      return;
+      const timer = setTimeout(() => setGeoError('This browser cannot report your location.'), 0);
+      return () => clearTimeout(timer);
     }
 
     const watch = navigator.geolocation.watchPosition(
@@ -246,9 +248,7 @@ export default function RecordingConsole({
   }, [startedAt]);
 
   // Close the form once a checkpoint saves, so the next tap starts clean.
-  useEffect(() => {
-    if (addState?.success) setFormOpen(false);
-  }, [addState?.success]);
+  const isFormOpen = formOpen && (!addState?.success || openedAfterAdd === addState);
 
   const done = checkpoints.filter((c) => c.completedAt).length;
 
@@ -319,10 +319,13 @@ export default function RecordingConsole({
       )}
 
       {/* --- primary action --- */}
-      {!formOpen ? (
+      {!isFormOpen ? (
         <button
           type="button"
-          onClick={() => setFormOpen(true)}
+          onClick={() => {
+            setOpenedAfterAdd(addState);
+            setFormOpen(true);
+          }}
           disabled={!fix}
           className="flex w-full items-center justify-center gap-2.5 rounded-xl bg-accent px-4 py-5 text-lg font-semibold text-accent-ink transition-colors hover:bg-accent-bright disabled:cursor-not-allowed disabled:bg-line-bright disabled:text-ink-faint"
         >
@@ -609,6 +612,7 @@ export default function RecordingConsole({
                   </p>
                   {c.photoUrl && (
                     <div className="mt-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={c.photoUrl} alt="House photo" className="h-16 w-auto rounded-md object-cover ring-1 ring-line" />
                     </div>
                   )}

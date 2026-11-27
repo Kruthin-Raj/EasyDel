@@ -70,9 +70,9 @@ jobs:
           pnpm --filter @delivery/database db:deploy
           pnpm --filter @delivery/database db:generate
 
-      - name: Lint core lib & typecheck database and web
+      - name: Lint, typecheck database and web
         run: |
-          pnpm --filter web exec eslint src/lib
+          pnpm --filter web lint
           pnpm --filter @delivery/database typecheck
           pnpm --filter web exec tsc --noEmit
 

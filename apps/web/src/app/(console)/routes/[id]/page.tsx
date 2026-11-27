@@ -244,6 +244,7 @@ export default async function RouteDetailPage({
                         )}
                         {s.resolvedPhotoUrl && (
                           <div className="mt-2">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={s.resolvedPhotoUrl} alt="House photo" className="h-20 w-auto rounded-md object-cover ring-1 ring-line" />
                           </div>
                         )}

@@ -1,0 +1,108 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [main, add/feature]
+  push:
+    branches: [add/feature]
+
+concurrency:
+  group: pr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck, Tests, Build & E2E
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: easydel
+          POSTGRES_PASSWORD: easydel_ci_password
+          POSTGRES_DB: easydel_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U easydel -d easydel_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      DATABASE_URL: postgresql://easydel:easydel_ci_password@localhost:5432/easydel_test
+      DIRECT_URL: postgresql://easydel:easydel_ci_password@localhost:5432/easydel_test
+      JWT_SECRET: ci-only-secret-not-for-production
+      ADMIN_PASSWORD: ci-test-password-1234
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Write CI env files for Prisma & Next.js
+        run: |
+          cat << EOF > .env
+          DATABASE_URL="${DATABASE_URL}"
+          DIRECT_URL="${DIRECT_URL}"
+          JWT_SECRET="${JWT_SECRET}"
+          ADMIN_PASSWORD="${ADMIN_PASSWORD}"
+          EOF
+          cp .env packages/database/.env
+          cp .env apps/web/.env.local
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply Prisma migrations & generate client
+        run: |
+          pnpm --filter @delivery/database db:deploy
+          pnpm --filter @delivery/database db:generate
+
+      - name: Lint, typecheck database and web
+        run: |
+          pnpm --filter web lint
+          pnpm --filter @delivery/database typecheck
+          pnpm --filter web exec tsc --noEmit
+
+      - name: Run Vitest unit + integration tests (139 tests)
+        run: pnpm --filter web test
+
+      - name: Build Next.js production bundle
+        run: pnpm --filter web build
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter web exec playwright install --with-deps chromium
+
+      - name: Run Playwright E2E checks (isolation & driver workflow)
+        run: |
+          pnpm --filter web start > /tmp/next-start.log 2>&1 &
+          SERVER_PID=$!
+          trap "kill $SERVER_PID 2>/dev/null || true" EXIT
+
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000/login >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          IDS=$(cd packages/database && node scripts/test-fixtures.mjs setup)
+          DELIVERY_ID=$(node -e "console.log(JSON.parse(process.argv[1]).deliveryId)" "$IDS")
+          ROUTE_A=$(node -e "console.log(JSON.parse(process.argv[1]).routeA)" "$IDS")
+
+          (cd apps/web && node tests/e2e/isolation.mjs "$DELIVERY_ID")
+          (cd packages/database && node scripts/test-fixtures.mjs reset)
+          (cd apps/web && node tests/e2e/features.mjs "$DELIVERY_ID" "$ROUTE_A")
+          (cd packages/database && node scripts/test-fixtures.mjs destroy)

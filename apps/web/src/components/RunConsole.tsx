@@ -38,6 +38,7 @@ export type RunStop = {
   floor: string | null;
   unit: string | null;
   entranceInstructions: string | null;
+  securityInstructions?: string | null;
   /** Signed URL for the house photo taken during training, if there is one. */
   photoUrl: string | null;
   subscriptions: {
@@ -125,6 +126,7 @@ export default function RunConsole({
   const [fix, setFix] = useState<Fix | null>(null);
   const [geoError, setGeoError] = useState<string | null>(null);
   const [panel, setPanel] = useState<'none' | 'skip' | 'issue' | 'failed'>('none');
+  const [openedAtAction, setOpenedAtAction] = useState<unknown>(null);
   const [elapsed, setElapsed] = useState('');
 
   const [deliverState, deliverAction] = useActionState(markDeliveredAction, null);
@@ -135,8 +137,8 @@ export default function RunConsole({
 
   useEffect(() => {
     if (!('geolocation' in navigator)) {
-      setGeoError('This browser cannot report your location.');
-      return;
+      const timer = setTimeout(() => setGeoError('This browser cannot report your location.'), 0);
+      return () => clearTimeout(timer);
     }
     const watch = navigator.geolocation.watchPosition(
       (p) => {
@@ -164,7 +166,10 @@ export default function RunConsole({
    */
   const [startedLabel, setStartedLabel] = useState<string | null>(null);
   useEffect(() => {
-    setStartedLabel(new Date(startedAt).toLocaleTimeString());
+    const timer = setTimeout(() => {
+      setStartedLabel(new Date(startedAt).toLocaleTimeString());
+    }, 0);
+    return () => clearTimeout(timer);
   }, [startedAt]);
 
   useEffect(() => {
@@ -180,10 +185,9 @@ export default function RunConsole({
     return () => clearInterval(t);
   }, [startedAt]);
 
-  // Close any open panel once an action succeeds.
-  useEffect(() => {
-    if (skipState?.success || issueState?.success || failState?.success) setPanel('none');
-  }, [skipState?.success, issueState?.success, failState?.success]);
+  const panelOutcome = skipState ?? issueState ?? failState;
+  const activePanel =
+    panelOutcome?.success && panelOutcome !== openedAtAction ? 'none' : panel;
 
   const done = stops.filter((s) => s.outcome).length;
   const current = stops.find((s) => !s.outcome) ?? null;
@@ -202,7 +206,9 @@ export default function RunConsole({
    * on every `stops` change would re-fire the note when nothing was delivered.
    */
   const stopsRef = useRef(stops);
-  stopsRef.current = stops;
+  useEffect(() => {
+    stopsRef.current = stops;
+  }, [stops]);
 
   const [bagNote, setBagNote] = useState<string | null>(null);
   const lastDone = useRef<number | null>(null);
@@ -444,6 +450,9 @@ export default function RunConsole({
             {current.entranceInstructions && (
               <p className="text-sm text-ink-dim">Entrance: {current.entranceInstructions}</p>
             )}
+            {current.securityInstructions && (
+              <p className="text-sm text-ink-dim">Security: {current.securityInstructions}</p>
+            )}
 
             {tooFar && (
               <p className="rounded-lg bg-warn-dim/60 px-4 py-3 text-sm text-ink ring-1 ring-inset ring-warn/30">
@@ -510,7 +519,10 @@ export default function RunConsole({
               </a>
               <button
                 type="button"
-                onClick={() => setPanel(panel === 'skip' ? 'none' : 'skip')}
+                onClick={() => {
+                  setOpenedAtAction(panelOutcome);
+                  setPanel(activePanel === 'skip' ? 'none' : 'skip');
+                }}
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-surface-2 px-4 py-3 text-sm font-medium text-ink ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2"
               >
                 <SkipForward className="h-4 w-4" aria-hidden />
@@ -518,7 +530,10 @@ export default function RunConsole({
               </button>
               <button
                 type="button"
-                onClick={() => setPanel(panel === 'failed' ? 'none' : 'failed')}
+                onClick={() => {
+                  setOpenedAtAction(panelOutcome);
+                  setPanel(activePanel === 'failed' ? 'none' : 'failed');
+                }}
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-surface-2 px-4 py-3 text-sm font-medium text-ink-dim ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2 hover:text-ink"
               >
                 <TriangleAlert className="h-4 w-4" aria-hidden />
@@ -526,7 +541,10 @@ export default function RunConsole({
               </button>
               <button
                 type="button"
-                onClick={() => setPanel(panel === 'issue' ? 'none' : 'issue')}
+                onClick={() => {
+                  setOpenedAtAction(panelOutcome);
+                  setPanel(activePanel === 'issue' ? 'none' : 'issue');
+                }}
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-surface-2 px-4 py-3 text-sm font-medium text-ink-dim ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2 hover:text-ink"
               >
                 <TriangleAlert className="h-4 w-4" aria-hidden />
@@ -536,7 +554,7 @@ export default function RunConsole({
 
             {/* Reason panels. A skip or failure without a reason is useless to
                 whoever reads the history, so the reason is required. */}
-            {panel === 'skip' && (
+            {activePanel === 'skip' && (
               <form action={skipAction} className="space-y-3 rounded-lg bg-surface-2 p-4 ring-1 ring-inset ring-line">
                 {hiddenPosition}
                 <input type="hidden" name="stopId" value={current.id} />
@@ -561,7 +579,7 @@ export default function RunConsole({
               </form>
             )}
 
-            {panel === 'failed' && (
+            {activePanel === 'failed' && (
               <form action={failAction} className="space-y-3 rounded-lg bg-surface-2 p-4 ring-1 ring-inset ring-line">
                 {hiddenPosition}
                 <input type="hidden" name="stopId" value={current.id} />
@@ -586,7 +604,7 @@ export default function RunConsole({
               </form>
             )}
 
-            {panel === 'issue' && (
+            {activePanel === 'issue' && (
               <form action={issueAction} className="space-y-3 rounded-lg bg-surface-2 p-4 ring-1 ring-inset ring-line">
                 {hiddenPosition}
                 <input type="hidden" name="entityType" value="Location" />

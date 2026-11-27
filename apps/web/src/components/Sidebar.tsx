@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
-  Radar,
   Building2,
   Route as RouteIcon,
   GraduationCap,
@@ -24,7 +23,7 @@ import { logoutAction } from '@/lib/auth-actions';
  * Navigation grouped by workflow: creating & memorizing routes, managing
  * locations, and reviewing deliveries/activity.
  */
-const GROUPS: { label: string; items: { name: string; href: string; icon: typeof Radar }[] }[] = [
+const GROUPS: { label: string; items: { name: string; href: string; icon: typeof LayoutDashboard }[] }[] = [
   {
     label: 'Routes & Learning',
     items: [
@@ -47,7 +46,6 @@ const GROUPS: { label: string; items: { name: string; href: string; icon: typeof
     label: 'Activity',
     items: [
       { name: 'Delivery history', href: '/delivery-history', icon: History },
-      { name: 'Live GPS', href: '/live', icon: Radar },
       { name: 'Reports', href: '/reports', icon: BarChart3 },
       { name: 'Settings', href: '/settings', icon: Sliders },
     ],

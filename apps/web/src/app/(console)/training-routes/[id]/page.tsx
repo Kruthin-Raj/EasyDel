@@ -161,9 +161,8 @@ export default async function TrainingSessionPage({
             {session.checkpoints.map((c, i) => (
               <li key={c.id} className="flex flex-col gap-4 p-5 sm:flex-row">
                 {photos[i] ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- signed
-                  // URLs are short-lived and per-request, so they cannot be
-                  // fed to the Image optimiser's static loader.
+                  /* Signed URLs are short-lived and per-request, so they cannot be fed to Image's static loader. */
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={photos[i] as string}
                     alt={`Photo of ${c.name}`}

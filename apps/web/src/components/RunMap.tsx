@@ -114,10 +114,9 @@ export default function RunMap({
    * which is exactly why the route line never appeared. The map is created once
    * and only re-created if the basemap style itself changes.
    */
-  const initialCentre = useRef<[number, number] | null>(null);
-  if (current && !initialCentre.current) {
-    initialCentre.current = [current.longitude, current.latitude];
-  }
+  const [initialCentre] = useState<[number, number] | null>(() =>
+    current ? [current.longitude, current.latitude] : null,
+  );
 
   // --- create the map once ------------------------------------------------
   useEffect(() => {
@@ -125,8 +124,8 @@ export default function RunMap({
     const instance = new maplibregl.Map({
       container: container.current,
       style: styleUrl,
-      center: initialCentre.current ?? [0, 0],
-      zoom: initialCentre.current ? 14 : 2,
+      center: initialCentre ?? [0, 0],
+      zoom: initialCentre ? 14 : 2,
       attributionControl: { compact: true },
     });
     // Bottom-left: the top-right corner is taken by the orientation,
@@ -144,7 +143,7 @@ export default function RunMap({
       map.current = null;
       setReady(false);
     };
-  }, [styleUrl]);
+  }, [styleUrl, initialCentre]);
 
   // --- watch position -----------------------------------------------------
   useEffect(() => {

@@ -42,8 +42,8 @@ export default function StartRecordingForm({
 
   useEffect(() => {
     if (!('geolocation' in navigator)) {
-      setGeoError('This browser cannot report your location.');
-      return;
+      const timer = setTimeout(() => setGeoError('This browser cannot report your location.'), 0);
+      return () => clearTimeout(timer);
     }
     const watch = navigator.geolocation.watchPosition(
       (position) => {

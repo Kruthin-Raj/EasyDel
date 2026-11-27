@@ -217,6 +217,7 @@ export async function addCheckpointAction(
       floor: text(formData, 'floor', 40) || null,
       unit: text(formData, 'unit', 40) || null,
       entranceInstructions: text(formData, 'entranceInstructions', MAX_NOTE) || null,
+      securityInstructions: text(formData, 'securityInstructions', MAX_NOTE) || null,
       photoUrl,
       sequence: (lastSequence._max.sequence ?? 0) + 1,
       completedAt: completed ? new Date() : null,
@@ -298,6 +299,10 @@ export async function updateCheckpointAction(
       address: text(formData, 'address', 300) || name,
       deliveryType: text(formData, 'deliveryType', 80) || null,
       quantity,
+      floor: text(formData, 'floor', 40) || null,
+      unit: text(formData, 'unit', 40) || null,
+      entranceInstructions: text(formData, 'entranceInstructions', MAX_NOTE) || null,
+      securityInstructions: text(formData, 'securityInstructions', MAX_NOTE) || null,
       notes: text(formData, 'notes', MAX_NOTE) || null,
       nextVisitNote: text(formData, 'nextVisitNote', MAX_NOTE) || null,
     },
@@ -476,7 +481,7 @@ export async function generateRouteFromSessionAction(
   const existing = await db.deliveryLocation.findMany({
     where: { createdById: user.id, status: { in: ['ACTIVE', 'PAUSED'] } },
     // `name` is needed as well as the position: reuse requires both.
-    select: { id: true, name: true, latitude: true, longitude: true },
+    select: { id: true, name: true, latitude: true, longitude: true, photo: true },
   });
 
   const locationIds: string[] = [];
@@ -519,6 +524,15 @@ export async function generateRouteFromSessionAction(
     if (near) {
       claimed.add(near.id);
       locationIds.push(near.id);
+      if (checkpoint.nextVisitNote || (!near.photo && checkpoint.photoUrl)) {
+        await db.deliveryLocation.update({
+          where: { id: near.id },
+          data: {
+            ...(checkpoint.nextVisitNote ? { nextVisitNote: checkpoint.nextVisitNote } : {}),
+            ...(!near.photo && checkpoint.photoUrl ? { photo: checkpoint.photoUrl } : {}),
+          },
+        });
+      }
       continue;
     }
 
@@ -530,9 +544,11 @@ export async function generateRouteFromSessionAction(
         latitude: checkpoint.latitude,
         longitude: checkpoint.longitude,
         notes: checkpoint.notes,
+        nextVisitNote: checkpoint.nextVisitNote,
         floor: checkpoint.floor,
         unit: checkpoint.unit,
         entranceInstructions: checkpoint.entranceInstructions,
+        securityInstructions: checkpoint.securityInstructions,
         photo: checkpoint.photoUrl,
         createdById: user.id,
       },
@@ -542,27 +558,25 @@ export async function generateRouteFromSessionAction(
       name: created.name,
       latitude: created.latitude,
       longitude: created.longitude,
+      photo: created.photo,
     });
     // Claimed immediately, so a later checkpoint in this same session cannot
     // fold itself into the location this one just created.
     claimed.add(created.id);
     locationIds.push(created.id);
 
-    // A recorded house with a delivery type is a real recurring delivery, so
-    // give it a subscription — otherwise it would be filtered out of every
-    // generated route as having nothing to deliver.
-    if (checkpoint.deliveryType) {
-      await db.subscription.create({
-        data: {
-          deliveryLocationId: created.id,
-          customerId: checkpoint.name,
-          productType: checkpoint.deliveryType,
-          quantity: checkpoint.quantity ?? 1,
-          frequency: 'DAILY',
-          specialInstructions: checkpoint.nextVisitNote,
-        },
-      });
-    }
+    // Give every recorded stop an active subscription item so day-two delivery
+    // and memorize views always have concrete delivery details to show.
+    await db.subscription.create({
+      data: {
+        deliveryLocationId: created.id,
+        customerId: checkpoint.name,
+        productType: checkpoint.deliveryType || 'Package',
+        quantity: checkpoint.quantity ?? 1,
+        frequency: 'DAILY',
+        specialInstructions: checkpoint.nextVisitNote,
+      },
+    });
 
     await db.auditLog.create({
       data: {

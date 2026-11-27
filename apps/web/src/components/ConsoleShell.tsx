@@ -30,14 +30,9 @@ export default function ConsoleShell({
   allowedNav: string[];
   children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
   const pathname = usePathname();
-
-  // Navigating from inside the drawer must close it, or the destination page
-  // renders underneath a still-open overlay.
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
+  const [openForPath, setOpenForPath] = useState<string | null>(null);
+  const open = openForPath === pathname;
 
   // Escape to dismiss, and lock the page behind the drawer so a scroll gesture
   // over the backdrop doesn't move the content the user can't see.
@@ -45,7 +40,7 @@ export default function ConsoleShell({
     if (!open) return;
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') setOpenForPath(null);
     };
     document.addEventListener('keydown', onKey);
 
@@ -77,7 +72,7 @@ export default function ConsoleShell({
         <button
           type="button"
           aria-label="Close navigation"
-          onClick={() => setOpen(false)}
+          onClick={() => setOpenForPath(null)}
           className={`absolute inset-0 h-full w-full cursor-default bg-black/65 transition-opacity duration-200 ${
             open ? 'opacity-100' : 'opacity-0'
           }`}
@@ -87,7 +82,7 @@ export default function ConsoleShell({
             open ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
-          <Sidebar user={user} allowedNav={allowedNav} onNavigate={() => setOpen(false)} />
+          <Sidebar user={user} allowedNav={allowedNav} onNavigate={() => setOpenForPath(null)} />
         </div>
       </div>
 
@@ -97,7 +92,7 @@ export default function ConsoleShell({
         <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-line bg-surface-2/95 px-3 py-2 backdrop-blur lg:hidden">
           <button
             type="button"
-            onClick={() => setOpen(true)}
+            onClick={() => setOpenForPath(pathname)}
             aria-label="Open navigation"
             aria-expanded={open}
             className="-ml-1 inline-flex h-11 w-11 items-center justify-center rounded-lg text-ink-dim transition-colors hover:bg-panel-2 hover:text-ink"

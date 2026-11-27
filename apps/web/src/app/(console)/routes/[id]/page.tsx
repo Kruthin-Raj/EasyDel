@@ -224,8 +224,27 @@ export default async function RouteDetailPage({
                             {s.deliveryLocation.notes}
                           </p>
                         )}
+                        {(s.deliveryLocation.entranceInstructions ||
+                          s.deliveryLocation.securityInstructions) && (
+                          <p className="mt-0.5 text-xs text-ink-dim">
+                            {[
+                              s.deliveryLocation.entranceInstructions &&
+                                `Entrance: ${s.deliveryLocation.entranceInstructions}`,
+                              s.deliveryLocation.securityInstructions &&
+                                `Security: ${s.deliveryLocation.securityInstructions}`,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </p>
+                        )}
+                        {s.deliveryLocation.nextVisitNote && (
+                          <p className="mt-1 rounded bg-warn-dim/40 px-2 py-0.5 text-xs text-ink">
+                            Next visit: {s.deliveryLocation.nextVisitNote}
+                          </p>
+                        )}
                         {s.resolvedPhotoUrl && (
                           <div className="mt-2">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img src={s.resolvedPhotoUrl} alt="House photo" className="h-20 w-auto rounded-md object-cover ring-1 ring-line" />
                           </div>
                         )}

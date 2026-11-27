@@ -7,6 +7,7 @@ import RecordMap from '@/components/RecordMap';
 import CheckpointEditor from '@/components/CheckpointEditor';
 import { downscaleImage, readableSize } from '@/lib/downscale';
 import {
+  type RecState,
   addCheckpointAction,
   appendTrackAction,
   toggleCheckpointCompleteAction,
@@ -23,6 +24,10 @@ type Checkpoint = {
   longitude: number;
   deliveryType: string | null;
   quantity: number | null;
+  floor: string | null;
+  unit: string | null;
+  entranceInstructions: string | null;
+  securityInstructions: string | null;
   notes: string | null;
   nextVisitNote: string | null;
   photoUrl: string | null;
@@ -92,6 +97,7 @@ export default function RecordingConsole({
   const [fix, setFix] = useState<Fix | null>(null);
   const [geoError, setGeoError] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [openedAfterAdd, setOpenedAfterAdd] = useState<RecState | undefined>(undefined);
   const [elapsed, setElapsed] = useState('');
   const pending = useRef<number[][]>([]);
   const [photoNote, setPhotoNote] = useState<string | null>(null);
@@ -147,8 +153,8 @@ export default function RecordingConsole({
   // --- live position -------------------------------------------------------
   useEffect(() => {
     if (!('geolocation' in navigator)) {
-      setGeoError('This browser cannot report your location.');
-      return;
+      const timer = setTimeout(() => setGeoError('This browser cannot report your location.'), 0);
+      return () => clearTimeout(timer);
     }
 
     const watch = navigator.geolocation.watchPosition(
@@ -242,9 +248,7 @@ export default function RecordingConsole({
   }, [startedAt]);
 
   // Close the form once a checkpoint saves, so the next tap starts clean.
-  useEffect(() => {
-    if (addState?.success) setFormOpen(false);
-  }, [addState?.success]);
+  const isFormOpen = formOpen && (!addState?.success || openedAfterAdd === addState);
 
   const done = checkpoints.filter((c) => c.completedAt).length;
 
@@ -315,10 +319,13 @@ export default function RecordingConsole({
       )}
 
       {/* --- primary action --- */}
-      {!formOpen ? (
+      {!isFormOpen ? (
         <button
           type="button"
-          onClick={() => setFormOpen(true)}
+          onClick={() => {
+            setOpenedAfterAdd(addState);
+            setFormOpen(true);
+          }}
           disabled={!fix}
           className="flex w-full items-center justify-center gap-2.5 rounded-xl bg-accent px-4 py-5 text-lg font-semibold text-accent-ink transition-colors hover:bg-accent-bright disabled:cursor-not-allowed disabled:bg-line-bright disabled:text-ink-faint"
         >
@@ -437,6 +444,25 @@ export default function RecordingConsole({
               <label className="block">
                 <span className="mb-1.5 block text-sm font-medium text-ink">Unit</span>
                 <input name="unit" placeholder="B" className="field" />
+              </label>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-medium text-ink">Entrance instructions</span>
+                <input
+                  name="entranceInstructions"
+                  placeholder="e.g. Side gate near meter"
+                  className="field"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-medium text-ink">Security / gate note</span>
+                <input
+                  name="securityInstructions"
+                  placeholder="e.g. Ask guard Ramesh"
+                  className="field"
+                />
               </label>
             </div>
 
@@ -586,10 +612,21 @@ export default function RecordingConsole({
                   </p>
                   {c.photoUrl && (
                     <div className="mt-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={c.photoUrl} alt="House photo" className="h-16 w-auto rounded-md object-cover ring-1 ring-line" />
                     </div>
                   )}
                   {c.notes && <p className="mt-1 text-xs text-ink-dim">{c.notes}</p>}
+                  {(c.entranceInstructions || c.securityInstructions) && (
+                    <p className="mt-1 text-xs text-ink-dim">
+                      {[
+                        c.entranceInstructions && `Entrance: ${c.entranceInstructions}`,
+                        c.securityInstructions && `Security: ${c.securityInstructions}`,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </p>
+                  )}
                   {c.nextVisitNote && (
                     <p className="mt-1 text-xs text-warn">Next visit: {c.nextVisitNote}</p>
                   )}
@@ -601,6 +638,10 @@ export default function RecordingConsole({
                       address: c.address,
                       deliveryType: c.deliveryType,
                       quantity: c.quantity,
+                      floor: c.floor,
+                      unit: c.unit,
+                      entranceInstructions: c.entranceInstructions,
+                      securityInstructions: c.securityInstructions,
                       notes: c.notes,
                       nextVisitNote: c.nextVisitNote,
                     }}

@@ -40,6 +40,10 @@ export default function CheckpointEditor({
     address: string;
     deliveryType: string | null;
     quantity: number | null;
+    floor: string | null;
+    unit: string | null;
+    entranceInstructions: string | null;
+    securityInstructions: string | null;
     notes: string | null;
     nextVisitNote: string | null;
   };
@@ -99,6 +103,36 @@ export default function CheckpointEditor({
           <span className="mb-1 block text-xs font-medium text-ink">Address</span>
           <input name="address" defaultValue={checkpoint.address} className="field" />
         </label>
+
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-ink">Floor</span>
+            <input name="floor" defaultValue={checkpoint.floor ?? ''} className="field" />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-ink">Unit</span>
+            <input name="unit" defaultValue={checkpoint.unit ?? ''} className="field" />
+          </label>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-ink">Entrance</span>
+            <input
+              name="entranceInstructions"
+              defaultValue={checkpoint.entranceInstructions ?? ''}
+              className="field"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-ink">Security</span>
+            <input
+              name="securityInstructions"
+              defaultValue={checkpoint.securityInstructions ?? ''}
+              className="field"
+            />
+          </label>
+        </div>
 
         <div className="grid grid-cols-2 gap-3">
           <label className="block">

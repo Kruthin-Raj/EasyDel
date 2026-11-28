@@ -18,11 +18,10 @@ export default async function NewRoutePage({
   const user = await requireUser();
   const { baseRoute: baseRouteId } = await searchParams;
 
-  // Only deliverable locations created by this user are offered: ACTIVE, and
-  // with at least one ACTIVE subscription.
+  // Deliverable locations created by this user with status ACTIVE.
   const [deliverable, existingRoutes, settings] = await Promise.all([
     db.deliveryLocation.findMany({
-      where: { ...locationWhere(user), status: 'ACTIVE', subscriptions: { some: { status: 'ACTIVE' } } },
+      where: { ...locationWhere(user), status: 'ACTIVE' },
       include: { subscriptions: { where: { status: 'ACTIVE' } } },
       orderBy: { name: 'asc' },
     }),
@@ -65,8 +64,8 @@ export default async function NewRoutePage({
       {deliverable.length === 0 ? (
         <Card>
           <EmptyState
-            message="No deliverable locations."
-            hint="A location needs status ACTIVE and at least one ACTIVE subscription before it can be routed."
+            message="No active delivery locations."
+            hint="You don't have any active delivery locations yet. Add locations under Delivery Locations to build a route."
           />
         </Card>
       ) : (
@@ -148,7 +147,8 @@ export default async function NewRoutePage({
                         {deliverable
                           .filter((l) => baseRouteLocationIds.has(l.id))
                           .map((l) => {
-                            const qty = l.subscriptions.reduce((s, x) => s + x.quantity, 0);
+                            const activeCount = l.subscriptions.length;
+                            const qty = activeCount > 0 ? l.subscriptions.reduce((s, x) => s + x.quantity, 0) : 1;
                             return (
                               <div
                                 key={l.id}
@@ -165,7 +165,7 @@ export default async function NewRoutePage({
                                   <span className="text-sm">
                                     <span className="font-medium text-ink">{l.name}</span>
                                     <span className="text-ink-dim">
-                                      {' '}&mdash; {qty} item{qty === 1 ? '' : 's'}
+                                      {' '}&mdash; {qty} item{qty === 1 ? '' : 's'}{activeCount > 0 ? '' : ' (standard package)'}
                                     </span>
                                     <span className="block text-xs text-ink-dim">{l.address}</span>
                                   </span>
@@ -195,7 +195,8 @@ export default async function NewRoutePage({
                     {deliverable
                       .filter((l) => !baseRouteLocationIds.has(l.id))
                       .map((l) => {
-                        const qty = l.subscriptions.reduce((s, x) => s + x.quantity, 0);
+                        const activeCount = l.subscriptions.length;
+                        const qty = activeCount > 0 ? l.subscriptions.reduce((s, x) => s + x.quantity, 0) : 1;
                         return (
                           <div
                             key={l.id}
@@ -211,8 +212,7 @@ export default async function NewRoutePage({
                               <span className="text-sm">
                                 <span className="font-medium text-ink">{l.name}</span>
                                 <span className="text-ink-dim">
-                                  {' '}&mdash; {qty} item{qty === 1 ? '' : 's'} across {l.subscriptions.length}{' '}
-                                  subscription{l.subscriptions.length === 1 ? '' : 's'}
+                                  {' '}&mdash; {qty} item{qty === 1 ? '' : 's'}{activeCount > 0 ? ` across ${activeCount} subscription${activeCount === 1 ? '' : 's'}` : ' (standard package)'}
                                 </span>
                                 <span className="block text-xs text-ink-dim">{l.address}</span>
                               </span>

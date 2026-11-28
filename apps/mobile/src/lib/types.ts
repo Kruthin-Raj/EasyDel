@@ -47,6 +47,9 @@ export type MobileRoute = {
   versionId: string | null;
   totalDistance: number | null;
   estimatedDuration: number | null;
+  routeGeometry?: number[][] | null;
+  startPoint?: { name: string; latitude: number; longitude: number } | null;
+  endPoint?: { name: string; latitude: number; longitude: number } | null;
   stops: MobileStop[];
 };
 

@@ -17,6 +17,7 @@ import {
   RotateCcw,
 } from 'lucide-react-native';
 import { useApp } from '../context/AppContext';
+import OsmRouteMap, { type OsmStopPin } from '../components/OsmRouteMap';
 import { COLORS } from '../theme';
 
 export default function MemorizeScreen() {
@@ -57,9 +58,32 @@ export default function MemorizeScreen() {
 
   const hideDetails = quizMode && !revealed;
 
+  const pins: OsmStopPin[] = stops.map((s, idx) => ({
+    id: s.id,
+    sequence: s.sequence,
+    name: quizMode && idx === safeIndex && !revealed ? `Stop #${s.sequence}` : s.name,
+    latitude: s.latitude,
+    longitude: s.longitude,
+    state:
+      idx === safeIndex
+        ? 'current'
+        : masteryMap[s.id] === 'got_it'
+          ? 'completed'
+          : 'remaining',
+  }));
+
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.scroll}>
+        <View style={{ marginBottom: 14 }}>
+          <OsmRouteMap
+            stops={pins}
+            routeGeometry={activeRoute.routeGeometry ?? null}
+            startPoint={activeRoute.startPoint ?? null}
+            endPoint={activeRoute.endPoint ?? null}
+            height={210}
+          />
+        </View>
         {/* Route & Progress Bar */}
         <View style={styles.topCard}>
           <View style={styles.topRow}>

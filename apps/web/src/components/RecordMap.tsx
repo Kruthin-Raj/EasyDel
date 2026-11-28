@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Crosshair } from 'lucide-react';
+import { attachOsmFallback, resolveMapStyleUrl } from '@/lib/map-style';
 
 export type RecordedPoint = {
   id: string;
@@ -49,9 +50,7 @@ export default function RecordMap({
   const [ready, setReady] = useState(false);
   const [follow, setFollow] = useState(true);
 
-  const styleUrl =
-    process.env.NEXT_PUBLIC_MAP_STYLE_URL ??
-    'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+  const styleUrl = resolveMapStyleUrl();
 
   /**
    * Paints the breadcrumb of where the driver has been.
@@ -101,6 +100,7 @@ export default function RecordMap({
       zoom: 2,
       attributionControl: { compact: true },
     });
+    attachOsmFallback(instance);
     instance.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-left');
     instance.on('dragstart', () => setFollow(false));
     map.current = instance;

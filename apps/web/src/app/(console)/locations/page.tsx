@@ -65,12 +65,20 @@ export default async function LocationsPage({
         title="Delivery locations"
         subtitle="Saved houses and buildings. Share any stop with its code or add one by code below."
         actions={
-          <Link
-            href="/locations/new"
-            className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-ink transition-colors hover:bg-accent-bright"
-          >
-            Add location
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/routes/new"
+              className="rounded-lg bg-surface-2 px-3 py-2 text-sm font-medium text-ink ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2"
+            >
+              Create route from active locations
+            </Link>
+            <Link
+              href="/locations/new"
+              className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-ink transition-colors hover:bg-accent-bright"
+            >
+              Add location
+            </Link>
+          </div>
         }
       />
 

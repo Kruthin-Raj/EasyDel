@@ -10,8 +10,13 @@ export default async function EditLocationPage({ params }: { params: Promise<{ i
   const user = await requireUser();
   const { id } = await params;
 
-  const location = await db.deliveryLocation.findUnique({ where: { id } });
+  const location = await db.deliveryLocation.findUnique({
+    where: { id },
+    include: { subscriptions: { where: { status: 'ACTIVE' } } },
+  });
   if (!location) notFound();
+
+  const activeSub = location.subscriptions[0] ?? null;
 
   if (location.createdById !== user.id) {
     return (
@@ -71,6 +76,22 @@ export default async function EditLocationPage({ params }: { params: Promise<{ i
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Floor" name="floor" defaultValue={location.floor ?? ''} />
                 <Field label="Unit / apartment" name="unit" defaultValue={location.unit ?? ''} />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field
+                  label="Delivery item"
+                  name="productType"
+                  defaultValue={activeSub?.productType ?? 'Package'}
+                  placeholder="Package, Newspaper, Milk"
+                />
+                <Field
+                  label="Quantity"
+                  name="quantity"
+                  type="number"
+                  min={1}
+                  defaultValue={activeSub?.quantity ?? 1}
+                />
               </div>
 
               <TextArea

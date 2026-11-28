@@ -35,5 +35,6 @@ export default defineConfig({
     // tokens.test.ts shares one database, so files must not race each other.
     fileParallelism: false,
     testTimeout: 30_000,
+    hookTimeout: 30_000,
   },
 });

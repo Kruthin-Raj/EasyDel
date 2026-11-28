@@ -12,6 +12,7 @@ import { POST as recordPost, GET as recordGet } from '../app/api/mobile/record/r
 import { POST as settingsPost, PUT as contactPut } from '../app/api/mobile/settings/route';
 import { POST as syncPost } from '../app/api/mobile/runs/sync/route';
 import { GET as releaseGet } from '../app/api/app-release/route';
+import { GET as osrmLegGet } from '../app/api/mobile/osrm-leg/route';
 import { hashPassword } from './password';
 
 const TAG = 'mobile-api-test';
@@ -134,7 +135,22 @@ describe('Mobile sync API & direct APK release endpoint', () => {
       },
     });
     const ver = await db.routeVersion.create({
-      data: { routeId: route.id, versionNumber: 1, totalDistance: 1200, estimatedDuration: 300 },
+      data: {
+        routeId: route.id,
+        versionNumber: 1,
+        totalDistance: 1200,
+        estimatedDuration: 300,
+        startLocationName: 'Depot',
+        startLatitude: 13.629,
+        startLongitude: 79.419,
+        routeGeometry: JSON.stringify({
+          type: 'LineString',
+          coordinates: [
+            [79.419, 13.629],
+            [79.42, 13.63],
+          ],
+        }),
+      },
     });
     await db.routeStop.create({
       data: { routeVersionId: ver.id, deliveryLocationId: loc.id, sequence: 1 },
@@ -147,11 +163,18 @@ describe('Mobile sync API & direct APK release endpoint', () => {
     expect(guestRouteRes.status).toBe(200);
     const guestRouteBody = (await guestRouteRes.json()) as {
       kind: string;
-      route: { name: string; stops: { totalItems: number }[] };
+      route: {
+        name: string;
+        routeGeometry: number[][] | null;
+        startPoint: { name: string } | null;
+        stops: { totalItems: number }[];
+      };
     };
     expect(guestRouteBody.kind).toBe('route');
     expect(guestRouteBody.route.name).toBe(`${TAG} Early Beat`);
     expect(guestRouteBody.route.stops[0]?.totalItems).toBe(2);
+    expect(guestRouteBody.route.routeGeometry).toHaveLength(2);
+    expect(guestRouteBody.route.startPoint?.name).toBe('Depot');
 
     const guestLocRes = await shareGet(new Request('http://localhost/api/mobile/share/MOBLOC77'), {
       params: Promise.resolve({ code: 'MOBLOC77' }),
@@ -222,8 +245,18 @@ describe('Mobile sync API & direct APK release endpoint', () => {
       }),
     );
     expect(syncedListRes.status).toBe(200);
-    const syncedList = (await syncedListRes.json()) as { routes: { id: string }[] };
+    const syncedList = (await syncedListRes.json()) as {
+      routes: { id: string; routeGeometry?: number[][] | null }[];
+    };
     expect(syncedList.routes.map((r) => r.id)).toContain(route.id);
+    expect(syncedList.routes.find((r) => r.id === route.id)?.routeGeometry).toHaveLength(2);
+
+    const badLegRes = await osrmLegGet(new Request('http://localhost/api/mobile/osrm-leg?fromLat=bad'));
+    expect(badLegRes.status).toBe(400);
+    const okLegRes = await osrmLegGet(
+      new Request('http://localhost/api/mobile/osrm-leg?fromLat=13.629&fromLng=79.419&toLat=13.63&toLng=79.42'),
+    );
+    expect(okLegRes.status).toBe(200);
 
     // 5. Rider syncs offline delivery outcomes
     const syncRes = await syncPost(
@@ -504,5 +537,5 @@ describe('Mobile sync API & direct APK release endpoint', () => {
       }),
     );
     expect(pwChangeRes.status).toBe(200);
-  }, 45_000);
+  }, 90_000);
 });

@@ -46,6 +46,10 @@ export default async function NewLocationPage() {
                 placeholder="https://maps.app.goo.gl/… or 13.6288, 79.4192"
               />
               <Field label="Address" name="address" placeholder="Optional — auto-filled from coords if blank" />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Delivery item" name="productType" defaultValue="Package" placeholder="Package, Newspaper, Milk" />
+                <Field label="Quantity" name="quantity" type="number" min={1} defaultValue={1} />
+              </div>
 
               <label className="flex items-start gap-2.5 rounded-lg bg-surface-2 p-3 ring-1 ring-inset ring-line">
                 <input
@@ -108,6 +112,11 @@ export default async function NewLocationPage() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Floor" name="floor" placeholder="2" />
                 <Field label="Unit / apartment" name="unit" placeholder="204" />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Delivery item" name="productType" defaultValue="Package" placeholder="Package, Newspaper, Milk" />
+                <Field label="Quantity" name="quantity" type="number" min={1} defaultValue={1} />
               </div>
 
               <TextArea

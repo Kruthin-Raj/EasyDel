@@ -289,6 +289,8 @@ export function Field({
   placeholder,
   hint,
   step,
+  min,
+  max,
   autoComplete,
   inputMode,
   maxLength,
@@ -302,6 +304,8 @@ export function Field({
   placeholder?: string;
   hint?: string;
   step?: string;
+  min?: string | number;
+  max?: string | number;
   autoComplete?: string;
   inputMode?: 'text' | 'numeric' | 'email' | 'tel';
   maxLength?: number;
@@ -321,6 +325,8 @@ export function Field({
         name={name}
         type={type}
         step={step}
+        min={min}
+        max={max}
         required={required}
         defaultValue={defaultValue}
         placeholder={placeholder}

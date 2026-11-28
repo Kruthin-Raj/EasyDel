@@ -551,10 +551,10 @@ export default function MemorizeConsole({
                 href={`https://www.google.com/maps/dir/?api=1&destination=${current.latitude},${current.longitude}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-surface-2 px-4 py-2.5 text-sm font-medium text-ink ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-line bg-panel px-3 py-2 text-xs font-medium text-ink-dim transition-colors hover:border-line-bright hover:text-ink"
               >
-                <Navigation className="h-4 w-4" aria-hidden />
-                Preview directions in Google Maps
+                <Navigation className="h-3.5 w-3.5" aria-hidden />
+                Optional secondary handoff: Google Maps
               </a>
 
               <p className="hidden text-center text-[11px] text-ink-faint sm:block">

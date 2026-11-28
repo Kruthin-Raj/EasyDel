@@ -75,6 +75,17 @@ export async function GET(
         )
       : [];
 
+    const routeGeometry: number[][] | null = latest?.routeGeometry
+      ? (() => {
+          try {
+            const parsed = JSON.parse(latest.routeGeometry);
+            return Array.isArray(parsed?.coordinates) ? (parsed.coordinates as number[][]) : null;
+          } catch {
+            return null;
+          }
+        })()
+      : null;
+
     return NextResponse.json({
       kind: 'route',
       code: route.shareCode ?? code,
@@ -86,6 +97,23 @@ export async function GET(
         versionId: latest?.id ?? null,
         totalDistance: latest?.totalDistance ?? null,
         estimatedDuration: latest?.estimatedDuration ?? null,
+        routeGeometry,
+        startPoint:
+          latest?.startLatitude != null && latest?.startLongitude != null
+            ? {
+                name: latest.startLocationName ?? 'Start',
+                latitude: latest.startLatitude,
+                longitude: latest.startLongitude,
+              }
+            : null,
+        endPoint:
+          latest?.endLatitude != null && latest?.endLongitude != null
+            ? {
+                name: latest.endLocationName ?? 'End',
+                latitude: latest.endLatitude,
+                longitude: latest.endLongitude,
+              }
+            : null,
         stops,
       },
     });

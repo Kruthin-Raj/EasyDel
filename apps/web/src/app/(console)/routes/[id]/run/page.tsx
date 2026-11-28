@@ -9,6 +9,7 @@ import { signedPhotoUrl } from '@/lib/storage';
 import { startRunAction } from '@/lib/run-actions';
 import RunConsole, { type RunStop } from '@/components/RunConsole';
 import StartRunForm from '@/components/StartRunForm';
+import LiveMap, { type MapMarker } from '@/components/Map';
 import { PageHeader, Card, MetricStrip, Notice, EmptyState, when, metres, duration } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
@@ -230,6 +231,37 @@ export default async function RunPage({
       })()
     : null;
 
+  const preStartMarkers: MapMarker[] = [];
+  if (version.startLatitude != null && version.startLongitude != null) {
+    preStartMarkers.push({
+      id: 'start',
+      lat: version.startLatitude,
+      lng: version.startLongitude,
+      name: version.startLocationName ?? 'Start',
+      state: 'start',
+    });
+  }
+  stops.forEach((s) => {
+    preStartMarkers.push({
+      id: s.id,
+      lat: s.latitude,
+      lng: s.longitude,
+      name: s.name,
+      sequence: s.sequence,
+      state: 'remaining',
+      subtitle: s.address,
+    });
+  });
+  if (version.endLatitude != null && version.endLongitude != null) {
+    preStartMarkers.push({
+      id: 'end',
+      lat: version.endLatitude,
+      lng: version.endLongitude,
+      name: version.endLocationName ?? 'End',
+      state: 'end',
+    });
+  }
+
   const totalItems = stops.reduce(
     (n, s) => n + s.subscriptions.reduce((m, x) => m + x.quantity, 0),
     0,
@@ -323,6 +355,15 @@ export default async function RunPage({
               { label: 'Planned time', value: duration(version.estimatedDuration) },
             ]}
           />
+
+          <Card
+            title="Route map (MapLibre + OpenStreetMap + OSRM)"
+            description="Optimised road path and numbered stop sequence before you start."
+          >
+            <div className="h-80 p-4 sm:h-96">
+              <LiveMap markers={preStartMarkers} routeGeometry={plannedGeometry} />
+            </div>
+          </Card>
 
           <div className="grid gap-6 lg:grid-cols-[minmax(0,24rem)_1fr]">
             <Card title="Start the run">

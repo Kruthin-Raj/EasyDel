@@ -135,6 +135,17 @@ export async function resolveSharedLocationForUser(sourceLocationId: string, use
         specialInstructions: s.specialInstructions,
       })),
     });
+  } else {
+    await db.subscription.create({
+      data: {
+        deliveryLocationId: created.id,
+        customerId: source.name,
+        productType: 'Package',
+        quantity: 1,
+        frequency: 'DAILY',
+        status: 'ACTIVE',
+      },
+    });
   }
 
   await db.auditLog.create({

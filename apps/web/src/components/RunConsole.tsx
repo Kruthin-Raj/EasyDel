@@ -508,23 +508,14 @@ export default function RunConsole({
               />
             </form>
 
-            <div className="grid grid-cols-2 gap-3">
-              <a
-                href={`https://www.google.com/maps/dir/?api=1&destination=${current.latitude},${current.longitude}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-surface-2 px-4 py-3 text-sm font-medium text-ink ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2"
-              >
-                <Navigation className="h-4 w-4" aria-hidden />
-                Navigate
-              </a>
+            <div className="grid grid-cols-3 gap-3">
               <button
                 type="button"
                 onClick={() => {
                   setOpenedAtAction(panelOutcome);
                   setPanel(activePanel === 'skip' ? 'none' : 'skip');
                 }}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-surface-2 px-4 py-3 text-sm font-medium text-ink ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2"
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-surface-2 px-3 py-3 text-sm font-medium text-ink ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2"
               >
                 <SkipForward className="h-4 w-4" aria-hidden />
                 Skip
@@ -535,7 +526,7 @@ export default function RunConsole({
                   setOpenedAtAction(panelOutcome);
                   setPanel(activePanel === 'failed' ? 'none' : 'failed');
                 }}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-surface-2 px-4 py-3 text-sm font-medium text-ink-dim ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2 hover:text-ink"
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-surface-2 px-3 py-3 text-sm font-medium text-ink-dim ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2 hover:text-ink"
               >
                 <TriangleAlert className="h-4 w-4" aria-hidden />
                 Failed
@@ -546,12 +537,22 @@ export default function RunConsole({
                   setOpenedAtAction(panelOutcome);
                   setPanel(activePanel === 'issue' ? 'none' : 'issue');
                 }}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-surface-2 px-4 py-3 text-sm font-medium text-ink-dim ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2 hover:text-ink"
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-surface-2 px-3 py-3 text-sm font-medium text-ink-dim ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2 hover:text-ink"
               >
                 <TriangleAlert className="h-4 w-4" aria-hidden />
                 Problem
               </button>
             </div>
+
+            <a
+              href={`https://www.google.com/maps/dir/?api=1&destination=${current.latitude},${current.longitude}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-line bg-panel px-3 py-2 text-xs font-medium text-ink-dim transition-colors hover:border-line-bright hover:text-ink"
+            >
+              <Navigation className="h-3.5 w-3.5" aria-hidden />
+              Optional secondary handoff: Open turn-by-turn in Google Maps
+            </a>
 
             {/* Reason panels. A skip or failure without a reason is useless to
                 whoever reads the history, so the reason is required. */}

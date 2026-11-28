@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { attachOsmFallback, resolveMapStyleUrl } from '@/lib/map-style';
 
 export type MapMarker = {
   id: string;
@@ -62,9 +63,7 @@ export default function LiveMap({
 }) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
-  const styleUrl =
-    process.env.NEXT_PUBLIC_MAP_STYLE_URL ??
-    'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+  const styleUrl = resolveMapStyleUrl();
 
   useEffect(() => {
     if (map.current || !container.current) return;
@@ -75,6 +74,7 @@ export default function LiveMap({
       zoom: 11,
       attributionControl: { compact: true },
     });
+    attachOsmFallback(instance);
     instance.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     map.current = instance;
     return () => {
@@ -153,10 +153,17 @@ export default function LiveMap({
 
     if (instance.isStyleLoaded()) draw();
     else instance.once('load', draw);
+    instance.on('style.load', draw);
+    return () => {
+      instance.off('style.load', draw);
+    };
   }, [routeGeometry]);
 
   return (
-    <div className={`overflow-hidden rounded-lg ring-1 ring-inset ring-line ${className}`}>
+    <div
+      className={`overflow-hidden rounded-lg ring-1 ring-inset ring-line ${className}`}
+      style={{ minHeight: '16rem' }}
+    >
       <div ref={container} className="h-full w-full" />
     </div>
   );

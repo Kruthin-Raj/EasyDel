@@ -47,6 +47,19 @@ export const DEMO_ROUTE: MobileRoute = {
   versionId: 'demo-v1',
   totalDistance: 2450,
   estimatedDuration: 680,
+  startPoint: { name: 'Depot', latitude: 13.6279, longitude: 79.4184 },
+  endPoint: { name: 'Depot', latitude: 13.6279, longitude: 79.4184 },
+  routeGeometry: [
+    [79.4184, 13.6279],
+    [79.4188, 13.6285],
+    [79.4192, 13.6288],
+    [79.4204, 13.6296],
+    [79.4211, 13.6305],
+    [79.4218, 13.6311],
+    [79.4227, 13.6324],
+    [79.4234, 13.6335],
+    [79.4241, 13.6342],
+  ],
   stops: [
     {
       id: 'demo-stop-1',

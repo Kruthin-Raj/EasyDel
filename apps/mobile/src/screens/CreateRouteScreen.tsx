@@ -19,7 +19,7 @@ export default function CreateRouteScreen() {
   const nav = useNavigation<{ goBack: () => void }>();
   const { apiUrl, locations, preferences, requireToken, refreshWorkspace, setActiveRouteId } = useApp();
 
-  const deliverable = locations.filter((l) => l.status === 'ACTIVE' && l.activeItems > 0);
+  const deliverable = locations.filter((l) => l.status === 'ACTIVE');
   const [name, setName] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>(() => deliverable.map((l) => l.id));
   const [startLat, setStartLat] = useState(String(preferences.defaultStartLat));
@@ -87,7 +87,7 @@ export default function CreateRouteScreen() {
           <Text style={styles.label}>Pick stops ({selectedIds.length} selected)</Text>
           {deliverable.length === 0 ? (
             <Text style={styles.empty}>
-              No deliverable locations yet. Add locations with items on the Locations tab first.
+              No active locations yet. Add locations on the Locations tab first.
             </Text>
           ) : (
             deliverable.map((loc) => {
@@ -106,7 +106,7 @@ export default function CreateRouteScreen() {
                   <View style={styles.flex}>
                     <Text style={styles.stopName}>{loc.name}</Text>
                     <Text style={styles.stopMeta}>
-                      {loc.activeItems} items · {loc.address}
+                      {loc.activeItems > 0 ? `${loc.activeItems} items` : '1 item (Package)'} · {loc.address}
                     </Text>
                   </View>
                 </TouchableOpacity>

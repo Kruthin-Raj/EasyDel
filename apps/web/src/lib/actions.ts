@@ -104,6 +104,23 @@ export async function createLocationAction(
     },
   });
 
+  const hasProductType = Boolean(formData.get('productType'));
+  const hasQuantity = Boolean(formData.get('quantity'));
+  if (hasProductType || hasQuantity) {
+    const productType = String(formData.get('productType') ?? '').trim() || 'Package';
+    const quantity = Math.max(1, Number(formData.get('quantity')) || 1);
+    await db.subscription.create({
+      data: {
+        deliveryLocationId: created.id,
+        customerId: name,
+        productType,
+        quantity,
+        frequency: 'DAILY',
+        status: 'ACTIVE',
+      },
+    });
+  }
+
   await audit(user.id, 'LOCATION_CREATED', 'DeliveryLocation', created.id, { newValue: name });
   revalidatePath('/locations');
   revalidatePath('/');
@@ -164,6 +181,23 @@ export async function createLocationFromLinkAction(
     },
   });
 
+  const hasProductType = Boolean(formData.get('productType'));
+  const hasQuantity = Boolean(formData.get('quantity'));
+  if (hasProductType || hasQuantity) {
+    const productType = String(formData.get('productType') ?? '').trim() || 'Package';
+    const quantity = Math.max(1, Number(formData.get('quantity')) || 1);
+    await db.subscription.create({
+      data: {
+        deliveryLocationId: created.id,
+        customerId: name,
+        productType,
+        quantity,
+        frequency: 'DAILY',
+        status: 'ACTIVE',
+      },
+    });
+  }
+
   await audit(user.id, 'LOCATION_CREATED', 'DeliveryLocation', created.id, { newValue: name });
   revalidatePath('/locations');
   revalidatePath('/');
@@ -214,6 +248,34 @@ export async function updateLocationAction(
       securityInstructions: String(formData.get('securityInstructions') ?? '') || null,
     },
   });
+
+  const productType = String(formData.get('productType') ?? '').trim();
+  const quantity = Number(formData.get('quantity')) || 0;
+  if (productType || quantity > 0) {
+    const existingSub = await db.subscription.findFirst({
+      where: { deliveryLocationId: id, status: 'ACTIVE' },
+    });
+    if (existingSub) {
+      await db.subscription.update({
+        where: { id: existingSub.id },
+        data: {
+          productType: productType || existingSub.productType,
+          quantity: quantity > 0 ? quantity : existingSub.quantity,
+        },
+      });
+    } else {
+      await db.subscription.create({
+        data: {
+          deliveryLocationId: id,
+          customerId: name,
+          productType: productType || 'Package',
+          quantity: quantity > 0 ? quantity : 1,
+          frequency: 'DAILY',
+          status: 'ACTIVE',
+        },
+      });
+    }
+  }
 
   await audit(user.id, 'LOCATION_UPDATED', 'DeliveryLocation', id, { oldValue: existing.name, newValue: name });
   revalidatePath('/locations');
@@ -317,13 +379,32 @@ export async function createRouteAction(
 
   const locations = await db.deliveryLocation.findMany({
     where: selected.length
-      ? { id: { in: selected }, createdById: user.id }
-      : { createdById: user.id, status: 'ACTIVE', subscriptions: { some: { status: 'ACTIVE' } } },
+      ? { id: { in: selected }, createdById: user.id, status: 'ACTIVE' }
+      : { createdById: user.id, status: 'ACTIVE' },
     select: { id: true, name: true, latitude: true, longitude: true },
   });
 
   if (locations.length === 0) {
-    return { error: 'No deliverable locations found. Add a location with an active subscription first.' };
+    return { error: 'No deliverable locations found. Add or select at least one active location first.' };
+  }
+
+  // Ensure every location in the route has at least one active subscription
+  for (const loc of locations) {
+    const subCount = await db.subscription.count({
+      where: { deliveryLocationId: loc.id, status: 'ACTIVE' },
+    });
+    if (subCount === 0) {
+      await db.subscription.create({
+        data: {
+          deliveryLocationId: loc.id,
+          customerId: loc.name,
+          productType: 'Package',
+          quantity: 1,
+          frequency: 'DAILY',
+          status: 'ACTIVE',
+        },
+      });
+    }
   }
 
   const startLat = Number(formData.get('startLatitude'));

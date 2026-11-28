@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Linking,
   SafeAreaView,
@@ -9,14 +9,21 @@ import {
   View,
 } from 'react-native';
 import * as Location from 'expo-location';
-import { MapPin, Navigation } from 'lucide-react-native';
+import { ExternalLink, MapPin } from 'lucide-react-native';
+import OsmRouteMap, { type OsmStopPin } from '../components/OsmRouteMap';
 import { useApp } from '../context/AppContext';
 import { COLORS } from '../theme';
 
 export default function RouteMapScreen() {
-  const { activeRoute } = useApp();
+  const { activeRoute, apiUrl } = useApp();
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [gpsStatus, setGpsStatus] = useState('Checking GPS…');
+  const [selectedStopId, setSelectedStopId] = useState<string | null>(null);
+  const [leg, setLeg] = useState<{
+    coordinates: number[][] | null;
+    distance: number | null;
+    duration: number | null;
+  }>({ coordinates: null, distance: null, duration: null });
 
   useEffect(() => {
     let active = true;
@@ -41,12 +48,72 @@ export default function RouteMapScreen() {
     };
   }, []);
 
-  const nextStop =
-    activeRoute.stops.find((s) => s.deliveryStatus !== 'DELIVERED') ?? activeRoute.stops[0];
+  const defaultNext =
+    activeRoute.stops.find((s) => s.deliveryStatus !== 'DELIVERED') ?? activeRoute.stops[0] ?? null;
+
+  const focusStop =
+    activeRoute.stops.find((s) => s.id === selectedStopId) ?? defaultNext;
+
+  // Query live OSRM leg road path from current GPS (or route start) to the focus stop.
+  useEffect(() => {
+    if (!focusStop) return;
+    const fromLat = coords?.lat ?? activeRoute.startPoint?.latitude;
+    const fromLng = coords?.lng ?? activeRoute.startPoint?.longitude;
+    if (fromLat == null || fromLng == null) return;
+
+    let cancelled = false;
+    const base = apiUrl.trim().replace(/\/$/, '');
+    const qs = `fromLat=${fromLat}&fromLng=${fromLng}&toLat=${focusStop.latitude}&toLng=${focusStop.longitude}`;
+    fetch(`${base}/api/mobile/osrm-leg?${qs}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data) {
+          setLeg({
+            coordinates: Array.isArray(data.coordinates) ? data.coordinates : null,
+            distance: typeof data.distance === 'number' ? data.distance : null,
+            duration: typeof data.duration === 'number' ? data.duration : null,
+          });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [apiUrl, coords?.lat, coords?.lng, focusStop, activeRoute.startPoint?.latitude, activeRoute.startPoint?.longitude]);
+
+  const pins: OsmStopPin[] = useMemo(
+    () =>
+      activeRoute.stops.map((stop) => ({
+        id: stop.id,
+        sequence: stop.sequence,
+        name: stop.name,
+        latitude: stop.latitude,
+        longitude: stop.longitude,
+        state:
+          stop.id === focusStop?.id
+            ? 'current'
+            : stop.deliveryStatus === 'DELIVERED'
+              ? 'completed'
+              : stop.deliveryStatus === 'FAILED'
+                ? 'failed'
+                : 'remaining',
+      })),
+    [activeRoute.stops, focusStop?.id],
+  );
 
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.scroll}>
+        <OsmRouteMap
+          stops={pins}
+          routeGeometry={activeRoute.routeGeometry ?? null}
+          activeLegGeometry={leg.coordinates}
+          driverCoords={coords}
+          startPoint={activeRoute.startPoint ?? null}
+          endPoint={activeRoute.endPoint ?? null}
+          height={330}
+        />
+
         <View style={styles.gpsCard}>
           <MapPin color={COLORS.accent} size={18} />
           <View style={styles.flex}>
@@ -54,53 +121,66 @@ export default function RouteMapScreen() {
             <Text style={styles.gpsSub}>
               {coords
                 ? `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`
-                : 'Tap any stop below to launch turn-by-turn navigation.'}
+                : 'Showing OpenStreetMap + OSRM road route across stops.'}
             </Text>
           </View>
         </View>
 
-        {nextStop ? (
+        {focusStop ? (
           <View style={styles.nextCard}>
-            <Text style={styles.eyebrow}>NEXT STOP · #{nextStop.sequence}</Text>
-            <Text style={styles.nextName}>{nextStop.name}</Text>
-            <Text style={styles.nextAddr}>{nextStop.address}</Text>
+            <Text style={styles.eyebrow}>
+              FOCUS STOP · #{focusStop.sequence} · MAPLIBRE + OSRM
+            </Text>
+            <Text style={styles.nextName}>{focusStop.name}</Text>
+            <Text style={styles.nextAddr}>{focusStop.address}</Text>
+            {leg.distance != null ? (
+              <Text style={styles.legMeta}>
+                OSRM road distance:{' '}
+                {leg.distance >= 1000
+                  ? `${(leg.distance / 1000).toFixed(1)} km`
+                  : `${Math.round(leg.distance)} m`}
+                {leg.duration != null ? ` · ~${Math.max(1, Math.round(leg.duration / 60))} min` : ''}
+              </Text>
+            ) : null}
+
             <TouchableOpacity
-              style={styles.mapsBtn}
+              style={styles.secondaryHandoffBtn}
               onPress={() =>
                 void Linking.openURL(
-                  `https://www.google.com/maps/dir/?api=1&destination=${nextStop.latitude},${nextStop.longitude}`,
+                  `https://www.google.com/maps/dir/?api=1&destination=${focusStop.latitude},${focusStop.longitude}`,
                 )
               }
               activeOpacity={0.85}
             >
-              <Navigation color={COLORS.accentInk} size={16} />
-              <Text style={styles.mapsBtnText}>Open turn-by-turn in Maps</Text>
+              <ExternalLink color={COLORS.inkDim} size={14} />
+              <Text style={styles.secondaryHandoffText}>
+                Optional external handoff: Google Maps
+              </Text>
             </TouchableOpacity>
           </View>
         ) : null}
 
-        <Text style={styles.sectionTitle}>Stop sequence ({activeRoute.stops.length})</Text>
+        <Text style={styles.sectionTitle}>
+          Tap a stop to focus on OSM + OSRM map ({activeRoute.stops.length})
+        </Text>
         <View style={styles.timeline}>
           {activeRoute.stops.map((stop) => {
             const done = stop.deliveryStatus === 'DELIVERED';
+            const isFocus = stop.id === focusStop?.id;
             return (
               <TouchableOpacity
                 key={stop.id}
-                style={styles.stopRow}
-                onPress={() =>
-                  void Linking.openURL(
-                    `https://www.google.com/maps/dir/?api=1&destination=${stop.latitude},${stop.longitude}`,
-                  )
-                }
+                style={[styles.stopRow, isFocus && styles.stopRowFocus]}
+                onPress={() => setSelectedStopId(stop.id)}
               >
-                <View style={[styles.seqBadge, done && styles.seqDone]}>
-                  <Text style={styles.seqText}>{stop.sequence}</Text>
+                <View style={[styles.seqBadge, done && styles.seqDone, isFocus && styles.seqFocus]}>
+                  <Text style={[styles.seqText, isFocus && styles.seqTextFocus]}>{stop.sequence}</Text>
                 </View>
                 <View style={styles.flex}>
                   <Text style={styles.stopName}>{stop.name}</Text>
                   <Text style={styles.stopAddr}>{stop.address}</Text>
                 </View>
-                <Navigation color={COLORS.inkFaint} size={15} />
+                <MapPin color={isFocus ? COLORS.accent : COLORS.inkFaint} size={15} />
               </TouchableOpacity>
             );
           })}
@@ -113,7 +193,7 @@ export default function RouteMapScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.bg },
   flex: { flex: 1 },
-  scroll: { padding: 16, paddingBottom: 32 },
+  scroll: { padding: 16, paddingBottom: 32, gap: 12 },
   gpsCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -122,10 +202,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: COLORS.border,
-    padding: 14,
-    marginBottom: 14,
+    padding: 12,
   },
-  gpsTitle: { fontSize: 14, fontWeight: '700', color: COLORS.ink },
+  gpsTitle: { fontSize: 13, fontWeight: '700', color: COLORS.ink },
   gpsSub: { fontSize: 12, color: COLORS.inkDim, marginTop: 2 },
   nextCard: {
     backgroundColor: COLORS.panel2,
@@ -133,28 +212,30 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(245, 158, 11, 0.4)',
     padding: 16,
-    marginBottom: 18,
   },
   eyebrow: { fontSize: 11, fontWeight: '700', color: COLORS.accent },
   nextName: { fontSize: 20, fontWeight: '800', color: COLORS.ink, marginTop: 4 },
   nextAddr: { fontSize: 13, color: COLORS.inkDim, marginTop: 2 },
-  mapsBtn: {
+  legMeta: { fontSize: 12, fontWeight: '600', color: COLORS.info, marginTop: 6 },
+  secondaryHandoffBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    backgroundColor: COLORS.accent,
-    borderRadius: 10,
-    paddingVertical: 12,
-    marginTop: 14,
+    gap: 6,
+    backgroundColor: COLORS.surface2,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 9,
+    paddingVertical: 9,
+    marginTop: 12,
   },
-  mapsBtnText: { fontSize: 14, fontWeight: '700', color: COLORS.accentInk },
+  secondaryHandoffText: { fontSize: 12, fontWeight: '600', color: COLORS.inkDim },
   sectionTitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: COLORS.inkDim,
     textTransform: 'uppercase',
-    marginBottom: 10,
+    marginTop: 4,
   },
   timeline: {
     backgroundColor: COLORS.panel,
@@ -171,6 +252,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
+  stopRowFocus: {
+    backgroundColor: COLORS.panel2,
+  },
   seqBadge: {
     width: 28,
     height: 28,
@@ -182,7 +266,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   seqDone: { backgroundColor: COLORS.okSoft, borderColor: COLORS.ok },
+  seqFocus: { backgroundColor: COLORS.accent, borderColor: COLORS.accent },
   seqText: { fontSize: 12, fontWeight: '700', color: COLORS.ink },
+  seqTextFocus: { color: COLORS.accentInk },
   stopName: { fontSize: 14, fontWeight: '600', color: COLORS.ink },
   stopAddr: { fontSize: 12, color: COLORS.inkDim, marginTop: 1 },
 });

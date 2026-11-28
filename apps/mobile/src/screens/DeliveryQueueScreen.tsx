@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   FlatList,
-  Linking,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -9,19 +8,53 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { CheckCircle2, Circle, Navigation, RefreshCw, SkipForward, XCircle } from 'lucide-react-native';
+import {
+  CheckCircle2,
+  Circle,
+  Map as MapIcon,
+  RefreshCw,
+  SkipForward,
+  XCircle,
+} from 'lucide-react-native';
+import { useNavigation } from '@react-navigation/native';
+import OsmRouteMap, { type OsmStopPin } from '../components/OsmRouteMap';
 import { useApp } from '../context/AppContext';
 import { COLORS } from '../theme';
 
 export default function DeliveryQueueScreen() {
+  const nav = useNavigation<{ navigate: (name: string) => void }>();
   const { activeRoute, recordStopStatus, pendingSync, syncNow, user } = useApp();
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [showMap, setShowMap] = useState(true);
   const [nextVisitDraft, setNextVisitDraft] = useState<Record<string, string>>({});
 
   const stops = activeRoute.stops;
   const doneCount = stops.filter(
     (s) => s.deliveryStatus === 'DELIVERED' || s.deliveryStatus === 'SKIPPED' || s.deliveryStatus === 'FAILED',
   ).length;
+  const currentStop =
+    stops.find(
+      (s) =>
+        s.deliveryStatus !== 'DELIVERED' &&
+        s.deliveryStatus !== 'SKIPPED' &&
+        s.deliveryStatus !== 'FAILED',
+    ) ?? null;
+
+  const pins: OsmStopPin[] = stops.map((s) => ({
+    id: s.id,
+    sequence: s.sequence,
+    name: s.name,
+    latitude: s.latitude,
+    longitude: s.longitude,
+    state:
+      s.id === currentStop?.id
+        ? 'current'
+        : s.deliveryStatus === 'DELIVERED'
+          ? 'completed'
+          : s.deliveryStatus === 'FAILED'
+            ? 'failed'
+            : 'remaining',
+  }));
 
   async function handleSync() {
     const res = await syncNow();
@@ -39,6 +72,15 @@ export default function DeliveryQueueScreen() {
             </Text>
           </View>
 
+          <TouchableOpacity
+            style={styles.mapToggleBtn}
+            onPress={() => setShowMap((v) => !v)}
+            activeOpacity={0.85}
+          >
+            <MapIcon color={COLORS.ink} size={14} />
+            <Text style={styles.mapToggleText}>{showMap ? 'Hide map' : 'OSM Map'}</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.syncBtn} onPress={handleSync} activeOpacity={0.85}>
             <RefreshCw color={COLORS.accentInk} size={14} />
             <Text style={styles.syncBtnText}>
@@ -53,6 +95,25 @@ export default function DeliveryQueueScreen() {
 
         {syncMessage ? <Text style={styles.syncMsg}>{syncMessage}</Text> : null}
       </View>
+
+      {showMap ? (
+        <View style={styles.mapPanel}>
+          <OsmRouteMap
+            stops={pins}
+            routeGeometry={activeRoute.routeGeometry ?? null}
+            startPoint={activeRoute.startPoint ?? null}
+            endPoint={activeRoute.endPoint ?? null}
+            height={190}
+          />
+          <TouchableOpacity
+            style={styles.fullMapLink}
+            onPress={() => nav.navigate('Map')}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.fullMapLinkText}>Open full-screen OSM + OSRM navigation view →</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       <FlatList
         data={stops}
@@ -91,13 +152,9 @@ export default function DeliveryQueueScreen() {
 
                 <TouchableOpacity
                   style={styles.navIconBtn}
-                  onPress={() =>
-                    void Linking.openURL(
-                      `https://www.google.com/maps/dir/?api=1&destination=${item.latitude},${item.longitude}`,
-                    )
-                  }
+                  onPress={() => nav.navigate('Map')}
                 >
-                  <Navigation color={COLORS.info} size={16} />
+                  <MapIcon color={COLORS.info} size={16} />
                 </TouchableOpacity>
               </View>
 
@@ -171,9 +228,29 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   title: { fontSize: 18, fontWeight: '800', color: COLORS.ink },
   subtitle: { fontSize: 12, color: COLORS.inkDim, marginTop: 2 },
+  mapToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: COLORS.surface2,
+    borderWidth: 1,
+    borderColor: COLORS.borderBright,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 9,
+  },
+  mapToggleText: { fontSize: 12, fontWeight: '600', color: COLORS.ink },
+  mapPanel: {
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 6,
+    backgroundColor: COLORS.bg,
+  },
+  fullMapLink: { paddingVertical: 6, alignItems: 'flex-end' },
+  fullMapLinkText: { fontSize: 12, fontWeight: '600', color: COLORS.accent },
   syncBtn: {
     flexDirection: 'row',
     alignItems: 'center',

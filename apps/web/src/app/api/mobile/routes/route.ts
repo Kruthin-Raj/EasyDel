@@ -149,6 +149,17 @@ export async function GET(request: Request) {
           )
         : [];
 
+      const routeGeometry: number[][] | null = latest?.routeGeometry
+        ? (() => {
+            try {
+              const parsed = JSON.parse(latest.routeGeometry);
+              return Array.isArray(parsed?.coordinates) ? (parsed.coordinates as number[][]) : null;
+            } catch {
+              return null;
+            }
+          })()
+        : null;
+
       return {
         id: route.id,
         name: route.name,
@@ -158,6 +169,23 @@ export async function GET(request: Request) {
         versionId: latest?.id ?? null,
         totalDistance: latest?.totalDistance ?? null,
         estimatedDuration: latest?.estimatedDuration ?? null,
+        routeGeometry,
+        startPoint:
+          latest?.startLatitude != null && latest?.startLongitude != null
+            ? {
+                name: latest.startLocationName ?? 'Start',
+                latitude: latest.startLatitude,
+                longitude: latest.startLongitude,
+              }
+            : null,
+        endPoint:
+          latest?.endLatitude != null && latest?.endLongitude != null
+            ? {
+                name: latest.endLocationName ?? 'End',
+                latitude: latest.endLatitude,
+                longitude: latest.endLongitude,
+              }
+            : null,
         stops,
       };
     }),
@@ -269,16 +297,35 @@ export async function POST(request: Request) {
   const selected = Array.isArray(body.locationIds) ? body.locationIds.filter(Boolean) : [];
   const locations = await db.deliveryLocation.findMany({
     where: selected.length
-      ? { id: { in: selected }, createdById: user.id }
-      : { createdById: user.id, status: 'ACTIVE', subscriptions: { some: { status: 'ACTIVE' } } },
+      ? { id: { in: selected }, createdById: user.id, status: 'ACTIVE' }
+      : { createdById: user.id, status: 'ACTIVE' },
     select: { id: true, name: true, latitude: true, longitude: true },
   });
 
   if (locations.length === 0) {
     return NextResponse.json(
-      { error: 'Pick at least one active location with an item to deliver.' },
+      { error: 'Pick at least one active location to create a route.' },
       { status: 400 },
     );
+  }
+
+  // Ensure every location in the route has at least one active subscription
+  for (const loc of locations) {
+    const subCount = await db.subscription.count({
+      where: { deliveryLocationId: loc.id, status: 'ACTIVE' },
+    });
+    if (subCount === 0) {
+      await db.subscription.create({
+        data: {
+          deliveryLocationId: loc.id,
+          customerId: loc.name,
+          productType: 'Package',
+          quantity: 1,
+          frequency: 'DAILY',
+          status: 'ACTIVE',
+        },
+      });
+    }
   }
 
   const startLat = Number(body.startLatitude ?? locations[0].latitude);

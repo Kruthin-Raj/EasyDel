@@ -5,6 +5,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Crosshair, Navigation, Compass, ArrowUp } from 'lucide-react';
 import { getNavigationLegAction } from '@/lib/run-actions';
+import { attachOsmFallback, resolveMapStyleUrl } from '@/lib/map-style';
 
 
 /**
@@ -102,9 +103,7 @@ export default function RunMap({
     duration: null,
   });
 
-  const styleUrl =
-    process.env.NEXT_PUBLIC_MAP_STYLE_URL ??
-    'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+  const styleUrl = resolveMapStyleUrl();
 
   /*
    * Initial centre, read through a ref.
@@ -128,6 +127,7 @@ export default function RunMap({
       zoom: initialCentre ? 14 : 2,
       attributionControl: { compact: true },
     });
+    attachOsmFallback(instance);
     // Bottom-left: the top-right corner is taken by the orientation,
     // re-centre and navigate buttons, and overlapping them made those
     // unclickable — the zoom control was swallowing the taps.
@@ -264,11 +264,29 @@ export default function RunMap({
         .addTo(instance);
     });
 
+    // When GPS has not locked yet (or no fix exists), frame the whole OSRM
+    // route & stops immediately instead of staring at a single pin or [0, 0].
+    if (!hasFix && ready) {
+      const pts: [number, number][] = stops.map((s) => [s.longitude, s.latitude]);
+      if (routeGeometry?.length) {
+        for (const c of routeGeometry) pts.push([c[0], c[1]]);
+      }
+      if (pts.length === 1) {
+        instance.jumpTo({ center: pts[0], zoom: 15 });
+      } else if (pts.length > 1) {
+        const bounds = pts.reduce(
+          (b, p) => b.extend(p),
+          new maplibregl.LngLatBounds(pts[0], pts[0]),
+        );
+        instance.fitBounds(bounds, { padding: 54, maxZoom: 15, duration: 0 });
+      }
+    }
+
     return () => {
       stopMarkers.current.forEach((m) => m.remove());
       stopMarkers.current = [];
     };
-  }, [stops, current, ready]);
+  }, [stops, current, ready, hasFix, routeGeometry]);
 
   // --- planned route outline ---------------------------------------------
   useEffect(() => {
@@ -292,18 +310,22 @@ export default function RunMap({
         type: 'line',
         source: 'planned',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
-        // Dashed and muted: this is the whole round, not the leg being driven.
+        // Clear OSRM road outline across all stops.
         paint: {
-          'line-color': '#64748b',
-          'line-width': 3,
-          'line-opacity': 0.55,
-          'line-dasharray': [2, 2],
+          'line-color': '#38bdf8',
+          'line-width': 4,
+          'line-opacity': 0.78,
+          'line-dasharray': [2, 1.5],
         },
       });
     };
 
     if (instance.isStyleLoaded()) draw();
     else instance.once('load', draw);
+    instance.on('style.load', draw);
+    return () => {
+      instance.off('style.load', draw);
+    };
   }, [routeGeometry, ready]);
 
   // --- live leg to the next stop -----------------------------------------
@@ -358,6 +380,7 @@ export default function RunMap({
 
       if (instance.isStyleLoaded()) apply();
       else instance.once('load', apply);
+      instance.on('style.load', apply);
     };
 
     void fetchLeg();
@@ -382,13 +405,13 @@ export default function RunMap({
 
   return (
     <div className="relative overflow-hidden rounded-xl border border-line">
-      <div ref={container} className="h-[22rem] w-full sm:h-[26rem]" />
+      <div ref={container} className="h-[22rem] w-full sm:h-[26rem]" style={{ minHeight: '22rem' }} />
 
       {/* Distance and time to the next stop, over the map. */}
       {current && (
         <div className="pointer-events-none absolute inset-x-3 top-3 flex justify-between gap-2">
           <div className="pointer-events-auto rounded-lg bg-surface/90 px-3 py-2 text-sm backdrop-blur ring-1 ring-inset ring-line-bright">
-            <p className="eyebrow text-accent">Next</p>
+            <p className="eyebrow text-accent">Next · MapLibre + OSRM</p>
             <p className="mt-0.5 font-medium text-ink">{current.name}</p>
             <p className="numeric mt-0.5 text-xs text-ink-dim">
               {leg.distance !== null
@@ -448,11 +471,11 @@ export default function RunMap({
               href={`https://www.google.com/maps/dir/?api=1&destination=${current.latitude},${current.longitude}&travelmode=driving`}
               target="_blank"
               rel="noopener noreferrer"
-              title="Open turn-by-turn in Google Maps"
-              className="rounded-lg bg-surface/90 p-2.5 text-ink ring-1 ring-inset ring-line-bright backdrop-blur transition-colors hover:bg-panel-2"
+              title="Optional secondary handoff: Open turn-by-turn in Google Maps"
+              className="rounded-lg bg-surface/85 p-2.5 text-ink-dim ring-1 ring-inset ring-line backdrop-blur transition-colors hover:bg-panel-2 hover:text-ink"
             >
               <Navigation className="h-4 w-4" aria-hidden />
-              <span className="sr-only">Open turn-by-turn in Google Maps</span>
+              <span className="sr-only">Optional secondary handoff: Google Maps</span>
             </a>
           </div>
         </div>
@@ -460,7 +483,7 @@ export default function RunMap({
 
       {!fix && (
         <p className="absolute inset-x-3 bottom-3 rounded-lg bg-surface/90 px-3 py-2 text-xs text-ink-dim backdrop-blur ring-1 ring-inset ring-line-bright">
-          Waiting for GPS — the map will follow you once a fix arrives.
+          OpenStreetMap + OSRM view — waiting for GPS to auto-follow you.
         </p>
       )}
     </div>

@@ -99,6 +99,21 @@ export default async function LoginPage({
           Create one
         </Link>
       </p>
+
+      <Link
+        href="/download-app"
+        className="mt-5 flex items-center justify-between gap-3 rounded-xl border border-accent/35 bg-accent/10 px-4 py-3 text-sm transition-colors hover:border-accent hover:bg-accent/15"
+      >
+        <span>
+          <span className="block font-semibold text-ink">Get the EasyDel Mobile App</span>
+          <span className="block text-xs text-ink-dim">
+            Direct Android APK download — no Play Store required
+          </span>
+        </span>
+        <span className="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-ink">
+          Download
+        </span>
+      </Link>
     </>
   );
 }

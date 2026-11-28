@@ -56,6 +56,9 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <div className="relative flex flex-wrap items-center justify-between gap-4 text-xs text-ink-faint">
           <span>Route creation, sharing &amp; memorization platform.</span>
           <div className="flex items-center gap-4">
+            <Link href="/download-app" className="font-medium text-accent transition-colors hover:text-accent-bright">
+              Get Android App
+            </Link>
             <Link href="/about" className="text-ink-dim transition-colors hover:text-accent">
               About
             </Link>
@@ -74,7 +77,10 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             <span className="eyebrow text-accent">route manager</span>
           </Link>
           {children}
-          <div className="mt-8 flex items-center justify-center gap-5 border-t border-line/70 pt-5 text-xs text-ink-dim lg:hidden">
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-5 border-t border-line/70 pt-5 text-xs text-ink-dim lg:hidden">
+            <Link href="/download-app" className="font-medium text-accent hover:text-accent-bright">
+              Get Android App
+            </Link>
             <Link href="/about" className="hover:text-accent">
               About
             </Link>

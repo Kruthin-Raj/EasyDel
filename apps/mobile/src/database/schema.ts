@@ -17,7 +17,7 @@ export const schema = appSchema({
         { name: 'entrance_instructions', type: 'string', isOptional: true },
         { name: 'photo_url', type: 'string', isOptional: true },
         { name: 'status', type: 'string' },
-        { name: 'sync_status', type: 'string' },
+        { name: 'local_sync_state', type: 'string' },
       ],
     }),
     tableSchema({
@@ -29,7 +29,7 @@ export const schema = appSchema({
         { name: 'version_id', type: 'string', isOptional: true },
         { name: 'status', type: 'string' },
         { name: 'assigned_driver_id', type: 'string', isOptional: true },
-        { name: 'sync_status', type: 'string' },
+        { name: 'local_sync_state', type: 'string' },
       ],
     }),
     tableSchema({
@@ -40,7 +40,7 @@ export const schema = appSchema({
         { name: 'sequence', type: 'number' },
         { name: 'delivery_status', type: 'string' },
         { name: 'items_summary', type: 'string', isOptional: true },
-        { name: 'sync_status', type: 'string' },
+        { name: 'local_sync_state', type: 'string' },
       ],
     }),
   ],

@@ -5,6 +5,8 @@ import { redirect } from 'next/navigation';
 import { db } from './db';
 import { requireUser } from './auth';
 import { requireCapability } from './permissions';
+import { normalizeShareInput } from './share-code';
+import { allocateUniqueShareCode, resolveSharedLocationForUser } from './route-sharing';
 import { parseMapLink, resolveShortLink } from './map-links';
 import { optimizeRoute, refineWithOsrm, haversine, type Point } from './optimize';
 
@@ -181,6 +183,7 @@ export async function addStopByLinkAction(_prev: EditState, formData: FormData):
     }
     locationId = near.id;
   } else {
+    const shareCode = await allocateUniqueShareCode();
     const created = await db.deliveryLocation.create({
       data: {
         name: nameOverride || parsed.name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
@@ -188,6 +191,7 @@ export async function addStopByLinkAction(_prev: EditState, formData: FormData):
         address: `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
         latitude: lat,
         longitude: lng,
+        shareCode,
         createdById: user.id,
       },
     });
@@ -276,6 +280,74 @@ export async function addStopFromLocationAction(
   revalidatePath(`/routes/${routeId}`);
   revalidatePath(`/routes/${routeId}/edit`);
   return { success: `Added “${location.name}” and re-optimised.` };
+}
+
+/** Adds one stop from another person's shared location code or link. */
+export async function addStopByCodeAction(
+  _prev: EditState,
+  formData: FormData,
+): Promise<EditState> {
+  const user = await requireCapability('create_routes');
+  const routeId = String(formData.get('routeId') ?? '').trim();
+  const code = normalizeShareInput(String(formData.get('code') ?? ''));
+
+  if (!code) {
+    return { error: 'Enter a valid location code (e.g. K7M9P2X4) or share link.' };
+  }
+
+  const { error, route } = await editableRoute(routeId, user.id);
+  if (error || !route) return { error: error ?? 'Route not found.' };
+
+  const latest = route.versions[0];
+  if (!latest) return { error: 'That route has no version to extend.' };
+
+  const shared = await db.deliveryLocation.findUnique({
+    where: { shareCode: code },
+    select: { id: true },
+  });
+  if (!shared) {
+    return { error: `No location found for code “${code}”.` };
+  }
+
+  const resolved = await resolveSharedLocationForUser(shared.id, user.id);
+  if (resolved.error || !resolved.location) {
+    return { error: resolved.error ?? 'Could not import that shared location.' };
+  }
+
+  const loc = resolved.location;
+  if (latest.stops.some((s) => s.deliveryLocationId === loc.id)) {
+    return { info: `“${loc.name}” is already a stop on this route.` };
+  }
+
+  const subCount = await db.subscription.count({
+    where: { deliveryLocationId: loc.id, status: 'ACTIVE' },
+  });
+  if (subCount === 0) {
+    await db.subscription.create({
+      data: {
+        deliveryLocationId: loc.id,
+        customerId: loc.name,
+        productType: 'Package',
+        quantity: 1,
+        frequency: 'DAILY',
+      },
+    });
+  }
+
+  const ids = [...latest.stops.map((s) => s.deliveryLocationId), loc.id];
+  await writeNewVersion(
+    routeId,
+    latest,
+    ids,
+    user.id,
+    `Added shared location “${loc.name}” by code`,
+    latest.stops.length,
+  );
+
+  revalidatePath('/locations');
+  revalidatePath(`/routes/${routeId}`);
+  revalidatePath(`/routes/${routeId}/edit`);
+  return { success: `Added “${loc.name}” from code ${code} and re-optimised.` };
 }
 
 // --------------------------------------------------------- remove stops ----

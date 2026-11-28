@@ -68,6 +68,8 @@ export default function MemorizeConsole({
   routeGeometry,
   startPoint,
   endPoint,
+  defaultQuizMode = false,
+  autoAdvance = true,
 }: {
   routeId: string;
   routeName: string;
@@ -76,9 +78,11 @@ export default function MemorizeConsole({
   routeGeometry: number[][] | null;
   startPoint: { name: string; lat: number; lng: number } | null;
   endPoint: { name: string; lat: number; lng: number } | null;
+  defaultQuizMode?: boolean;
+  autoAdvance?: boolean;
 }) {
   const [index, setIndex] = useState(0);
-  const [quizMode, setQuizMode] = useState(false);
+  const [quizMode, setQuizMode] = useState(defaultQuizMode);
   const [revealed, setRevealed] = useState(false);
   const [mastered, setMastered] = useState<Record<string, 'got_it' | 'review'>>({});
   const [useGps, setUseGps] = useState(false);
@@ -106,13 +110,37 @@ export default function MemorizeConsole({
     setRevealed(false);
   }
 
+  useEffect(() => {
+    if (stops.length === 0) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (
+        e.target instanceof HTMLElement &&
+        (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || e.target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.key === 'ArrowLeft') {
+        setIndex((i) => (i - 1 + stops.length) % stops.length);
+        setRevealed(false);
+      } else if (e.key === 'ArrowRight') {
+        setIndex((i) => (i + 1) % stops.length);
+        setRevealed(false);
+      } else if (e.key === ' ' && quizMode) {
+        e.preventDefault();
+        setRevealed((r) => !r);
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [stops.length, quizMode]);
+
   function markStop(status: 'got_it' | 'review') {
     if (!current) return;
     const updated = { ...mastered, [current.id]: status };
     setMastered(updated);
 
-    // Advance to the next stop that isn't marked "got_it" yet, or just next.
-    if (stops.length > 1) {
+    // Advance to the next stop that isn't marked "got_it" yet, if enabled.
+    if (autoAdvance && stops.length > 1) {
       const nextUnmastered = stops.findIndex(
         (s, i) => i > index && updated[s.id] !== 'got_it',
       );
@@ -528,6 +556,19 @@ export default function MemorizeConsole({
                 <Navigation className="h-4 w-4" aria-hidden />
                 Preview directions in Google Maps
               </a>
+
+              <p className="hidden text-center text-[11px] text-ink-faint sm:block">
+                Tip: Use <kbd className="rounded border border-line px-1 font-mono">←</kbd>{' '}
+                <kbd className="rounded border border-line px-1 font-mono">→</kbd> to switch stops
+                {quizMode ? (
+                  <>
+                    {' '}
+                    and <kbd className="rounded border border-line px-1 font-mono">Space</kbd> to
+                    reveal details
+                  </>
+                ) : null}
+                .
+              </p>
             </div>
           </section>
 

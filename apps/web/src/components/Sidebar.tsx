@@ -16,12 +16,14 @@ import {
   CircleDot,
   Link2,
   Share2,
+  Info,
+  Mail,
 } from 'lucide-react';
 import { logoutAction } from '@/lib/auth-actions';
 
 /*
  * Navigation grouped by workflow: creating & memorizing routes, managing
- * locations, and reviewing deliveries/activity.
+ * locations, reviewing deliveries/activity, and help/info.
  */
 const GROUPS: { label: string; items: { name: string; href: string; icon: typeof LayoutDashboard }[] }[] = [
   {
@@ -48,6 +50,13 @@ const GROUPS: { label: string; items: { name: string; href: string; icon: typeof
       { name: 'Delivery history', href: '/delivery-history', icon: History },
       { name: 'Reports', href: '/reports', icon: BarChart3 },
       { name: 'Settings', href: '/settings', icon: Sliders },
+    ],
+  },
+  {
+    label: 'Help & Info',
+    items: [
+      { name: 'About', href: '/about', icon: Info },
+      { name: 'Contact us', href: '/contact', icon: Mail },
     ],
   },
 ];
@@ -97,9 +106,14 @@ export default function Sidebar({
       aria-label="Main"
       className="flex h-full w-60 shrink-0 flex-col border-r border-line bg-surface-2"
     >
-      <div className="flex items-baseline gap-2 px-5 py-5">
-        <span className="text-base font-semibold tracking-tight text-ink">EasyDel</span>
-        <span className="eyebrow text-accent">v1</span>
+      <div className="flex items-center gap-2.5 border-b border-line/70 px-5 py-4">
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent/15 text-accent ring-1 ring-inset ring-accent/30">
+          <RouteIcon className="h-4 w-4" aria-hidden />
+        </span>
+        <div className="flex items-baseline gap-2">
+          <span className="text-base font-semibold tracking-tight text-ink">EasyDel</span>
+          <span className="eyebrow text-accent">v1</span>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 pb-4">

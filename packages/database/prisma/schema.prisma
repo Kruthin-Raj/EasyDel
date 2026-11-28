@@ -110,6 +110,7 @@ model DeliveryLocation {
   securityInstructions String?
   status               LocationStatus @default(ACTIVE)
   pauseUntil           DateTime?
+  shareCode            String?        @unique
 
   createdById          String?
   createdBy            User?          @relation("CreatedLocations", fields: [createdById], references: [id])

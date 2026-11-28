@@ -2,7 +2,10 @@ import Link from 'next/link';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { locationWhere } from '@/lib/scope';
+import { ensureLocationShareCode } from '@/lib/route-sharing';
 import { setLocationStatusAction } from '@/lib/actions';
+import JoinRouteForm from '@/components/JoinRouteForm';
+import ShareRouteCard from '@/components/ShareRouteCard';
 import { PageHeader, Card, Table, Td, Badge, EmptyState, Button, when } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
@@ -27,7 +30,7 @@ export default async function LocationsPage({
   const user = await requireUser();
   const { q = '', status = 'ACTIVE' } = await searchParams;
 
-  const locations = await db.deliveryLocation.findMany({
+  const rawLocations = await db.deliveryLocation.findMany({
     where: {
       ...locationWhere(user),
       ...(status !== 'ALL' ? { status: status as never } : {}),
@@ -37,6 +40,7 @@ export default async function LocationsPage({
               { name: { contains: q, mode: 'insensitive' as const } },
               { address: { contains: q, mode: 'insensitive' as const } },
               { buildingName: { contains: q, mode: 'insensitive' as const } },
+              { shareCode: { contains: q, mode: 'insensitive' as const } },
             ],
           }
         : {}),
@@ -48,11 +52,18 @@ export default async function LocationsPage({
     orderBy: { name: 'asc' },
   });
 
+  const locations = await Promise.all(
+    rawLocations.map(async (loc) => ({
+      ...loc,
+      shareCode: loc.shareCode ?? (await ensureLocationShareCode(loc.id)),
+    })),
+  );
+
   return (
     <>
       <PageHeader
         title="Delivery locations"
-        subtitle="Reusable delivery points. Locations are archived, never deleted, so history survives."
+        subtitle="Saved houses and buildings. Share any stop with its code or add one by code below."
         actions={
           <Link
             href="/locations/new"
@@ -61,6 +72,12 @@ export default async function LocationsPage({
             Add location
           </Link>
         }
+      />
+
+      <JoinRouteForm
+        title="Add a location with code"
+        description="Paste a teammate's 8-letter location code or link to copy their pin, photo, and notes."
+        submitLabel="Open code"
       />
 
       <Card>
@@ -97,7 +114,7 @@ export default async function LocationsPage({
             hint={q ? 'Try a different search or status filter.' : 'Add your first delivery location.'}
           />
         ) : (
-          <Table head={['Location', 'Address', 'Deliveries', 'Status', 'Used in', 'Actions']}>
+          <Table head={['Location', 'Share code', 'Address', 'Deliveries', 'Status', 'Used in', 'Actions']}>
             {locations.map((loc) => {
               const activeSubs = loc.subscriptions.filter((s) => s.status === 'ACTIVE');
               const totalQty = activeSubs.reduce((sum, s) => sum + s.quantity, 0);
@@ -113,6 +130,20 @@ export default async function LocationsPage({
                         {[loc.floor && `Floor ${loc.floor}`, loc.unit].filter(Boolean).join(' · ')}
                       </p>
                     ) : null}
+                  </Td>
+                  <Td>
+                    {loc.shareCode ? (
+                      <ShareRouteCard
+                        routeId={loc.id}
+                        routeName={loc.name}
+                        shareCode={loc.shareCode}
+                        isOwner={false}
+                        compact
+                        kind="location"
+                      />
+                    ) : (
+                      <span className="text-ink-faint">—</span>
+                    )}
                   </Td>
                   <Td className="max-w-64 text-ink-dim">
                     <span className="break-anywhere">{loc.address}</span>

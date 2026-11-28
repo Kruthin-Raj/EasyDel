@@ -23,4 +23,6 @@ export const ALL_NAV_HREFS = [
   '/delivery-history',
   '/reports',
   '/settings',
+  '/about',
+  '/contact',
 ] as const;

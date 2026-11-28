@@ -17,6 +17,7 @@ import { db } from './db';
 
 export const SESSION_COOKIE = 'easydel_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 12; // 12 hours
+const MOBILE_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 
 function secret() {
   const value = process.env.JWT_SECRET;
@@ -81,14 +82,7 @@ export type SessionUser = {
   lastName: string;
 };
 
-export async function getSessionUser(): Promise<SessionUser | null> {
-  const jar = await cookies();
-  const token = jar.get(SESSION_COOKIE)?.value;
-  if (!token) return null;
-
-  const userId = readToken(token);
-  if (!userId) return null;
-
+async function loadVerifiedUser(userId: string): Promise<SessionUser | null> {
   const user = await db.user.findUnique({
     where: { id: userId },
     select: {
@@ -102,7 +96,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   });
 
   // Re-checked per request, so revoking verification or deleting the row takes
-  // effect at once rather than when the cookie happens to expire.
+  // effect at once rather than when the cookie or token happens to expire.
   if (!user || !user.emailVerified) return null;
 
   return {
@@ -112,6 +106,35 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     firstName: user.firstName,
     lastName: user.lastName,
   };
+}
+
+export async function getSessionUser(): Promise<SessionUser | null> {
+  const jar = await cookies();
+  const token = jar.get(SESSION_COOKIE)?.value;
+  if (!token) return null;
+
+  const userId = readToken(token);
+  if (!userId) return null;
+
+  return loadVerifiedUser(userId);
+}
+
+/** Issues a 30-day HMAC-signed bearer token for the native mobile app. */
+export function createBearerToken(userId: string): string {
+  const payload = `${userId}|${Date.now() + MOBILE_TOKEN_TTL_SECONDS * 1000}`;
+  return `${payload}.${sign(payload)}`;
+}
+
+/** Authenticates a mobile API request from `Authorization: Bearer <token>`. */
+export async function getBearerUser(request: Request): Promise<SessionUser | null> {
+  const header = request.headers.get('authorization') ?? '';
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match) return null;
+
+  const userId = readToken(match[1].trim());
+  if (!userId) return null;
+
+  return loadVerifiedUser(userId);
 }
 
 /** Throws unless a verified session exists. */

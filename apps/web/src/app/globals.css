@@ -66,7 +66,7 @@
   isolation: isolate;
 }
 
-/* Faint engineering grid, brightest at the top-left where the eye enters. */
+/* Faint engineering grid + subtle amber ambient light at the top-left. */
 .console-field::before {
   content: "";
   position: fixed;
@@ -74,10 +74,12 @@
   z-index: -2;
   pointer-events: none;
   background-image:
+    radial-gradient(60% 45% at 15% 0%, color-mix(in oklab, var(--color-accent) 9%, transparent) 0%, transparent 70%),
+    radial-gradient(50% 40% at 88% 8%, color-mix(in oklab, var(--color-info) 6%, transparent) 0%, transparent 72%),
     linear-gradient(to right, color-mix(in oklab, var(--color-line) 55%, transparent) 1px, transparent 1px),
     linear-gradient(to bottom, color-mix(in oklab, var(--color-line) 55%, transparent) 1px, transparent 1px);
-  background-size: 56px 56px;
-  mask-image: radial-gradient(120% 100% at 0% 0%, #000 0%, transparent 70%);
+  background-size: 100% 100%, 100% 100%, 56px 56px, 56px 56px;
+  mask-image: radial-gradient(135% 110% at 15% 0%, #000 0%, transparent 80%);
 }
 
 /* Grain, so large dark areas are not dead flat. */

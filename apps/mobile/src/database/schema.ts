@@ -1,23 +1,32 @@
 import { appSchema, tableSchema } from '@nozbe/watermelondb';
 
 export const schema = appSchema({
-  version: 1,
+  version: 2,
   tables: [
     tableSchema({
       name: 'locations',
       columns: [
+        { name: 'remote_id', type: 'string', isIndexed: true },
         { name: 'name', type: 'string' },
         { name: 'address', type: 'string' },
         { name: 'latitude', type: 'number' },
         { name: 'longitude', type: 'number' },
+        { name: 'share_code', type: 'string', isOptional: true },
+        { name: 'notes', type: 'string', isOptional: true },
+        { name: 'next_visit_note', type: 'string', isOptional: true },
+        { name: 'entrance_instructions', type: 'string', isOptional: true },
+        { name: 'photo_url', type: 'string', isOptional: true },
         { name: 'status', type: 'string' },
-        { name: 'sync_status', type: 'string' }, // 'synced', 'created', 'updated', 'deleted'
+        { name: 'sync_status', type: 'string' },
       ],
     }),
     tableSchema({
       name: 'routes',
       columns: [
+        { name: 'remote_id', type: 'string', isIndexed: true },
         { name: 'name', type: 'string' },
+        { name: 'share_code', type: 'string', isOptional: true },
+        { name: 'version_id', type: 'string', isOptional: true },
         { name: 'status', type: 'string' },
         { name: 'assigned_driver_id', type: 'string', isOptional: true },
         { name: 'sync_status', type: 'string' },
@@ -29,7 +38,8 @@ export const schema = appSchema({
         { name: 'route_id', type: 'string', isIndexed: true },
         { name: 'location_id', type: 'string', isIndexed: true },
         { name: 'sequence', type: 'number' },
-        { name: 'delivery_status', type: 'string' }, // 'PENDING', 'COMPLETED', 'SKIPPED'
+        { name: 'delivery_status', type: 'string' },
+        { name: 'items_summary', type: 'string', isOptional: true },
         { name: 'sync_status', type: 'string' },
       ],
     }),

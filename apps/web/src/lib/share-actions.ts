@@ -5,13 +5,18 @@ import { redirect } from 'next/navigation';
 import { db } from './db';
 import { requireUser } from './auth';
 import { formatSharePath, normalizeShareInput } from './share-code';
-import { allocateUniqueShareCode, canAccessRoute } from './route-sharing';
+import {
+  allocateUniqueShareCode,
+  canAccessRoute,
+  resolveSharedLocationForUser,
+} from './route-sharing';
+import { optimizeRoute, refineWithOsrm, type Point } from './optimize';
 
 export type ShareActionState = { error?: string; success?: string } | null;
 
 /**
- * Resolves a pasted share code or share link and takes the user to that
- * route's share preview page so they can inspect, save, memorize, or run it.
+ * Resolves a pasted share code or share link (for either a route OR a delivery
+ * location) and takes the user to its share preview page.
  */
 export async function joinRouteByCodeAction(
   _prev: ShareActionState,
@@ -22,19 +27,143 @@ export async function joinRouteByCodeAction(
   const raw = String(formData.get('code') ?? '');
   const code = normalizeShareInput(raw);
   if (!code) {
-    return { error: 'Enter a valid route code (e.g. K7M9P2X4) or paste a share link.' };
+    return { error: 'Enter a valid code (e.g. K7M9P2X4) or paste a share link.' };
   }
 
-  const route = await db.route.findUnique({
-    where: { shareCode: code },
-    select: { id: true, shareCode: true },
-  });
+  const [route, location] = await Promise.all([
+    db.route.findUnique({ where: { shareCode: code }, select: { id: true, shareCode: true } }),
+    db.deliveryLocation.findUnique({
+      where: { shareCode: code },
+      select: { id: true, shareCode: true },
+    }),
+  ]);
 
-  if (!route || !route.shareCode) {
-    return { error: `No route found for code “${code}”. Check the code and try again.` };
+  if (route?.shareCode) {
+    redirect(formatSharePath(route.shareCode));
+  }
+  if (location?.shareCode) {
+    redirect(formatSharePath(location.shareCode));
   }
 
-  redirect(formatSharePath(route.shareCode));
+  return {
+    error: `No route or location found for code “${code}”. Check the code and try again.`,
+  };
+}
+
+/**
+ * Saves a shared delivery location (by code or id) into the signed-in user's
+ * own location list, optionally also appending it to one of their routes.
+ */
+export async function saveSharedLocationAction(
+  _prev: ShareActionState,
+  formData: FormData,
+): Promise<ShareActionState> {
+  const user = await requireUser();
+  const locationId = String(formData.get('locationId') ?? '').trim();
+  const codeRaw = String(formData.get('code') ?? '').trim();
+  const routeId = String(formData.get('routeId') ?? '').trim();
+  const code = codeRaw ? normalizeShareInput(codeRaw) : null;
+
+  const source = locationId
+    ? await db.deliveryLocation.findUnique({
+        where: { id: locationId },
+        select: { id: true, shareCode: true },
+      })
+    : code
+      ? await db.deliveryLocation.findUnique({
+          where: { shareCode: code },
+          select: { id: true, shareCode: true },
+        })
+      : null;
+
+  if (!source) {
+    return { error: 'That shared location could not be found.' };
+  }
+
+  const resolved = await resolveSharedLocationForUser(source.id, user.id);
+  if (resolved.error || !resolved.location) {
+    return { error: resolved.error ?? 'Could not save this location.' };
+  }
+
+  const savedLoc = resolved.location;
+
+  if (routeId) {
+    const targetRoute = await db.route.findUnique({
+      where: { id: routeId },
+      include: {
+        versions: {
+          orderBy: { versionNumber: 'desc' },
+          take: 1,
+          include: { stops: { orderBy: { sequence: 'asc' } } },
+        },
+      },
+    });
+    const latest = targetRoute?.versions[0];
+    if (targetRoute && targetRoute.createdById === user.id && latest) {
+      const ids = latest.stops.map((s) => s.deliveryLocationId);
+      if (!ids.includes(savedLoc.id)) {
+        const nextIds = [...ids, savedLoc.id];
+        const locations = await db.deliveryLocation.findMany({
+          where: { id: { in: nextIds } },
+          select: { id: true, name: true, latitude: true, longitude: true },
+        });
+        const start: Point = {
+          id: 'start',
+          name: latest.startLocationName ?? 'Start',
+          lat: latest.startLatitude ?? savedLoc.latitude,
+          lng: latest.startLongitude ?? savedLoc.longitude,
+        };
+        const end: Point = {
+          id: 'end',
+          name: latest.endLocationName ?? start.name,
+          lat: latest.endLatitude ?? start.lat,
+          lng: latest.endLongitude ?? start.lng,
+        };
+        const optimized = await refineWithOsrm(
+          optimizeRoute(
+            start,
+            end,
+            locations.map((l) => ({ id: l.id, name: l.name, lat: l.latitude, lng: l.longitude })),
+          ),
+        );
+        const version = await db.routeVersion.create({
+          data: {
+            routeId: targetRoute.id,
+            versionNumber: latest.versionNumber + 1,
+            startLocationName: start.name,
+            startLatitude: start.lat,
+            startLongitude: start.lng,
+            endLocationName: end.name,
+            endLatitude: end.lat,
+            endLongitude: end.lng,
+            totalDistance: optimized.totalDistance,
+            estimatedDuration: Math.round(optimized.estimatedDuration),
+            routeGeometry: optimized.geometry ? JSON.stringify(optimized.geometry) : null,
+          },
+        });
+        await db.routeStop.createMany({
+          data: optimized.order.map((p, i) => ({
+            routeVersionId: version.id,
+            deliveryLocationId: p.id,
+            sequence: i + 1,
+            distanceFromPrevious: optimized.legs[i]?.distance ?? null,
+            durationFromPrevious: Math.round(optimized.legs[i]?.duration ?? 0),
+          })),
+        });
+        revalidatePath(`/routes/${targetRoute.id}`);
+        revalidatePath(`/routes/${targetRoute.id}/edit`);
+        revalidatePath('/routes');
+      }
+      revalidatePath('/locations');
+      revalidatePath('/');
+      redirect(`/routes/${targetRoute.id}`);
+    }
+  }
+
+  revalidatePath('/locations');
+  revalidatePath('/');
+  if (source.shareCode) revalidatePath(formatSharePath(source.shareCode));
+  redirect('/locations');
 }
 
 /**

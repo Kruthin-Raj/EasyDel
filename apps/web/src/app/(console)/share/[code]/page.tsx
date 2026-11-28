@@ -3,7 +3,7 @@ import { BookOpen, Copy, Play, CheckCircle2 } from 'lucide-react';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { normalizeShareInput } from '@/lib/share-code';
-import { duplicateRouteAction, saveRouteAction } from '@/lib/share-actions';
+import { duplicateRouteAction, saveRouteAction, saveSharedLocationAction } from '@/lib/share-actions';
 import { signedPhotoUrl } from '@/lib/storage';
 import LiveMap, { type MapMarker } from '@/components/Map';
 import JoinRouteForm from '@/components/JoinRouteForm';
@@ -57,12 +57,176 @@ export default async function SharedRoutePage({
   });
 
   if (!route) {
+    const sharedLocation = await db.deliveryLocation.findUnique({
+      where: { shareCode: code },
+      include: {
+        createdBy: true,
+        subscriptions: { where: { status: 'ACTIVE' } },
+      },
+    });
+
+    if (sharedLocation) {
+      const isLocOwner = sharedLocation.createdById === user.id;
+      const [photoUrl, myEditableRoutes] = await Promise.all([
+        sharedLocation.photo ? signedPhotoUrl(sharedLocation.photo) : Promise.resolve(null),
+        db.route.findMany({
+          where: { createdById: user.id, status: { not: 'ARCHIVED' } },
+          select: { id: true, name: true },
+          orderBy: { updatedAt: 'desc' },
+          take: 50,
+        }),
+      ]);
+
+      const locMarkers: MapMarker[] = [
+        {
+          id: sharedLocation.id,
+          lat: sharedLocation.latitude,
+          lng: sharedLocation.longitude,
+          name: sharedLocation.name,
+          sequence: 1,
+          state: 'remaining',
+          subtitle: sharedLocation.address,
+        },
+      ];
+
+      return (
+        <>
+          <PageHeader
+            eyebrow={`Shared location · ${sharedLocation.shareCode ?? code}`}
+            title={sharedLocation.name}
+            subtitle={
+              sharedLocation.createdBy
+                ? `Shared by ${sharedLocation.createdBy.firstName} ${sharedLocation.createdBy.lastName}`
+                : 'Shared delivery stop'
+            }
+            actions={
+              <Link
+                href="/locations"
+                className="rounded-lg bg-surface-2 px-3 py-2 text-sm font-medium text-ink ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2"
+              >
+                My locations
+              </Link>
+            }
+          />
+
+          {sharedLocation.status === 'ARCHIVED' && (
+            <Notice tone="warning">
+              This location has been archived by its creator and can no longer be imported.
+            </Notice>
+          )}
+
+          {isLocOwner && (
+            <div className="flex items-center gap-2 rounded-lg bg-ok-dim/50 px-4 py-3 text-sm text-ink ring-1 ring-inset ring-ok/30">
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-ok" aria-hidden />
+              <span>This is already one of your saved locations.</span>
+            </div>
+          )}
+
+          {sharedLocation.status !== 'ARCHIVED' && (
+            <Card
+              title={isLocOwner ? 'Add this location to a route' : 'Save to my locations'}
+              description="Copies the pin, house photo, instructions, and delivery items into your own list."
+            >
+              <div className="p-5">
+                <ActionForm
+                  action={saveSharedLocationAction}
+                  submitLabel={isLocOwner ? 'Add to selected route' : 'Save location'}
+                  pendingLabel="Saving…"
+                >
+                  <input type="hidden" name="locationId" value={sharedLocation.id} />
+                  <input type="hidden" name="code" value={sharedLocation.shareCode ?? code} />
+
+                  {myEditableRoutes.length > 0 && (
+                    <label className="block">
+                      <span className="mb-1.5 block text-sm font-medium text-ink">
+                        Also add to route {isLocOwner ? '' : '(optional)'}
+                      </span>
+                      <select
+                        name="routeId"
+                        required={isLocOwner}
+                        defaultValue=""
+                        className="field"
+                      >
+                        <option value="">
+                          {isLocOwner ? 'Choose a route…' : 'Save to locations only'}
+                        </option>
+                        {myEditableRoutes.map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                </ActionForm>
+              </div>
+            </Card>
+          )}
+
+          <div className="grid gap-5 lg:grid-cols-2">
+            <Card title="Map pin">
+              <div className="h-72 p-4">
+                <LiveMap markers={locMarkers} routeGeometry={null} />
+              </div>
+            </Card>
+
+            <Card title="Stop details">
+              <div className="space-y-3 p-5 text-sm">
+                {photoUrl && (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={photoUrl}
+                    alt={`Photo of ${sharedLocation.name}`}
+                    className="h-44 w-full rounded-lg object-cover ring-1 ring-line"
+                  />
+                )}
+                <p className="text-ink-dim">{sharedLocation.address}</p>
+                {(sharedLocation.floor || sharedLocation.unit) && (
+                  <p className="text-ink">
+                    {[
+                      sharedLocation.floor && `Floor ${sharedLocation.floor}`,
+                      sharedLocation.unit && `Unit ${sharedLocation.unit}`,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </p>
+                )}
+                {sharedLocation.entranceInstructions && (
+                  <p className="text-ink">
+                    <span className="font-medium text-accent">Entrance:</span>{' '}
+                    {sharedLocation.entranceInstructions}
+                  </p>
+                )}
+                {sharedLocation.securityInstructions && (
+                  <p className="text-ink">
+                    <span className="font-medium text-accent">Security:</span>{' '}
+                    {sharedLocation.securityInstructions}
+                  </p>
+                )}
+                {sharedLocation.notes && <p className="text-ink-dim">{sharedLocation.notes}</p>}
+                {sharedLocation.subscriptions.length > 0 && (
+                  <div className="pt-2">
+                    <p className="eyebrow mb-1 text-ink-faint">Items</p>
+                    <p className="text-xs text-ink-dim">
+                      {sharedLocation.subscriptions
+                        .map((s) => `${s.productType} ×${s.quantity}`)
+                        .join(', ')}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </Card>
+          </div>
+        </>
+      );
+    }
+
     return (
       <>
         <PageHeader
-          eyebrow="Shared route"
-          title="Route not found"
-          subtitle={`We could not find a route matching code “${code}”.`}
+          eyebrow="Shared code"
+          title="Route or location not found"
+          subtitle={`We could not find a route or location matching code “${code}”.`}
           actions={
             <Link
               href="/routes"
@@ -74,10 +238,9 @@ export default async function SharedRoutePage({
         />
         <div className="max-w-2xl space-y-4">
           <Notice tone="warning">
-            The creator may have generated a new code, or there might be a typo in the link. Try
-            entering the code again below.
+            Check the 8-letter code or paste the full share link again below.
           </Notice>
-          <JoinRouteForm title="Try another route code or link" />
+          <JoinRouteForm title="Try another route or location code" />
         </div>
       </>
     );

@@ -536,6 +536,7 @@ export async function generateRouteFromSessionAction(
       continue;
     }
 
+    const shareCode = await allocateUniqueShareCode();
     const created = await db.deliveryLocation.create({
       data: {
         name: checkpoint.name,
@@ -550,6 +551,7 @@ export async function generateRouteFromSessionAction(
         entranceInstructions: checkpoint.entranceInstructions,
         securityInstructions: checkpoint.securityInstructions,
         photo: checkpoint.photoUrl,
+        shareCode,
         createdById: user.id,
       },
     });

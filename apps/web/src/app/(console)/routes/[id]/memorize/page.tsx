@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
-import { loadSettings, parseGeofenceMetres } from '@/lib/permissions';
+import { loadSettings, parseUserPreferences } from '@/lib/permissions';
 import { canAccessRoute } from '@/lib/route-sharing';
 import { signedPhotoUrl } from '@/lib/storage';
 import Forbidden from '@/components/Forbidden';
@@ -80,7 +80,7 @@ export default async function MemorizeRoutePage({
   }
 
   const settings = await loadSettings();
-  const geofenceMetres = parseGeofenceMetres(settings, user.id);
+  const prefs = parseUserPreferences(settings, user.id);
 
   const photoUrls = await Promise.all(
     version.stops.map((s) => signedPhotoUrl(s.deliveryLocation.photo, 60 * 60 * 8)),
@@ -167,10 +167,12 @@ export default async function MemorizeRoutePage({
         routeId={route.id}
         routeName={route.name}
         stops={stops}
-        geofenceMetres={geofenceMetres}
+        geofenceMetres={prefs.geofenceMetres}
         routeGeometry={routeGeometry}
         startPoint={startPoint}
         endPoint={endPoint}
+        defaultQuizMode={prefs.memorizeQuizDefault}
+        autoAdvance={prefs.memorizeAutoAdvance}
       />
     </>
   );

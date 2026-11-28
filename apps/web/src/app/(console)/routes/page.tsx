@@ -12,8 +12,17 @@ import { PageHeader, Card, Table, Td, Badge, EmptyState, Button, Notice, when, d
 
 export const dynamic = 'force-dynamic';
 
-export default async function RoutesPage() {
+export default async function RoutesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; filter?: string }>;
+}) {
   const user = await requireUser();
+  const params = await searchParams;
+  const query = (params.q ?? '').trim();
+  const qLower = query.toLowerCase();
+  const filter =
+    params.filter === 'owned' || params.filter === 'saved' ? params.filter : 'all';
 
   const rawRoutes = await db.route.findMany({
     where: await routeWhere(user),
@@ -62,6 +71,29 @@ export default async function RoutesPage() {
       _count: { select: { deliveries: true } },
     },
   });
+
+  const ownedCount = routes.filter((r) => r.createdById === user.id).length;
+  const savedCount = routes.length - ownedCount;
+  const filteredRoutes = routes.filter((r) => {
+    const isOwner = r.createdById === user.id;
+    if (filter === 'owned' && !isOwner) return false;
+    if (filter === 'saved' && isOwner) return false;
+    if (!qLower) return true;
+    const creator = `${r.createdBy.firstName} ${r.createdBy.lastName}`.toLowerCase();
+    return (
+      r.name.toLowerCase().includes(qLower) ||
+      (r.shareCode?.toLowerCase().includes(qLower) ?? false) ||
+      creator.includes(qLower)
+    );
+  });
+
+  function filterHref(nextFilter: 'all' | 'owned' | 'saved') {
+    const sp = new URLSearchParams();
+    if (nextFilter !== 'all') sp.set('filter', nextFilter);
+    if (query) sp.set('q', query);
+    const qs = sp.toString();
+    return qs ? `/routes?${qs}` : '/routes';
+  }
 
   return (
     <>
@@ -150,9 +182,71 @@ export default async function RoutesPage() {
           />
         </Card>
       ) : (
-        <Card>
-          <Table head={['Route', 'Share code', 'Stops', 'Distance', 'Status', '']}>
-            {routes.map((r) => {
+        <div className="space-y-3">
+          <div className="flex flex-col gap-3 rounded-xl border border-line bg-panel p-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter routes">
+              {(
+                [
+                  { id: 'all', label: `All (${routes.length})` },
+                  { id: 'owned', label: `Created by me (${ownedCount})` },
+                  { id: 'saved', label: `Saved from team (${savedCount})` },
+                ] as const
+              ).map((tab) => {
+                const active = filter === tab.id;
+                return (
+                  <Link
+                    key={tab.id}
+                    href={filterHref(tab.id)}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                      active
+                        ? 'bg-accent text-accent-ink font-semibold'
+                        : 'bg-surface-2 text-ink-dim ring-1 ring-inset ring-line hover:text-ink'
+                    }`}
+                  >
+                    {tab.label}
+                  </Link>
+                );
+              })}
+            </div>
+
+            <form method="GET" action="/routes" className="flex items-center gap-2">
+              {filter !== 'all' && <input type="hidden" name="filter" value={filter} />}
+              <input
+                type="search"
+                name="q"
+                defaultValue={query}
+                placeholder="Search by route name, code, or teammate…"
+                aria-label="Search routes"
+                className="w-full rounded-lg border border-line-bright bg-surface-2 px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none sm:w-64"
+              />
+              <button
+                type="submit"
+                className="shrink-0 rounded-lg bg-surface-2 px-3 py-1.5 text-xs font-medium text-ink ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2"
+              >
+                Search
+              </button>
+              {(query || filter !== 'all') && (
+                <Link
+                  href="/routes"
+                  className="shrink-0 text-xs text-ink-dim underline-offset-2 hover:text-ink hover:underline"
+                >
+                  Reset
+                </Link>
+              )}
+            </form>
+          </div>
+
+          {filteredRoutes.length === 0 ? (
+            <Card>
+              <EmptyState
+                message="No routes match your search or filter."
+                hint="Try another route name, clear the search box, or switch back to All."
+              />
+            </Card>
+          ) : (
+            <Card>
+              <Table head={['Route', 'Share code', 'Stops', 'Distance', 'Status', '']}>
+                {filteredRoutes.map((r) => {
               const latest = r.versions[0];
               const isOwner = r.createdById === user.id;
               // A stop whose location is no longer ACTIVE means the route is stale.
@@ -247,6 +341,8 @@ export default async function RoutesPage() {
             })}
           </Table>
         </Card>
+          )}
+        </div>
       )}
     </>
   );

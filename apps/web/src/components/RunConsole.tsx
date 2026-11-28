@@ -113,6 +113,7 @@ export default function RunConsole({
   geofenceMetres,
   reordered = false,
   routeGeometry = null,
+  showBagReminder = true,
 }: {
   runId: string;
   routeId: string;
@@ -122,6 +123,7 @@ export default function RunConsole({
   geofenceMetres: number;
   reordered?: boolean;
   routeGeometry?: number[][] | null;
+  showBagReminder?: boolean;
 }) {
   const [fix, setFix] = useState<Fix | null>(null);
   const [geoError, setGeoError] = useState<string | null>(null);
@@ -217,9 +219,8 @@ export default function RunConsole({
     const previous = lastDone.current;
     lastDone.current = done;
 
-    // Skip the first render, and skip an undo — this is a confirmation of
-    // something just handed over, not a running commentary.
-    if (previous === null || done <= previous) return;
+    // Skip the first render, undo, or if the user disabled bag reminders.
+    if (!showBagReminder || previous === null || done <= previous) return;
 
     const byType = new Map<string, number>();
     for (const stop of stopsRef.current) {
@@ -246,7 +247,7 @@ export default function RunConsole({
 
     const timer = setTimeout(() => setBagNote(null), 9000);
     return () => clearTimeout(timer);
-  }, [done]);
+  }, [done, showBagReminder]);
 
   const distance = fix && current ? metresBetween(fix, current) : null;
   const tooFar = distance !== null && distance > geofenceMetres;

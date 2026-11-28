@@ -7,7 +7,7 @@ export type ApkReleaseInfo = {
   fileName: string;
   sizeBytes: number | null;
   downloadUrl: string | null;
-  source: 'env' | 'supabase-storage' | 'local-public' | 'none';
+  source: 'env' | 'supabase-storage' | 'local-public' | 'github-release' | 'none';
   updatedAt: string | null;
 };
 
@@ -18,6 +18,7 @@ export type ApkReleaseInfo = {
  *  1. `APK_DOWNLOAD_URL` env var (direct release / CDN link)
  *  2. Private Supabase Storage bucket (`APK_BUCKET` / `easydel-latest.apk`)
  *  3. Local file in `public/downloads/easydel-android.apk`
+ *  4. Latest `.apk` asset on GitHub Releases (`GITHUB_RELEASE_REPO` / `Kruthin-Raj/EasyDel`)
  */
 export async function resolveApkRelease(): Promise<ApkReleaseInfo> {
   const version = process.env.MOBILE_APP_VERSION || '1.0.0';
@@ -86,6 +87,41 @@ export async function resolveApkRelease(): Promise<ApkReleaseInfo> {
       source: 'local-public',
       updatedAt: stats.mtime.toISOString(),
     };
+  }
+
+  const ghRepo = (process.env.GITHUB_RELEASE_REPO || 'Kruthin-Raj/EasyDel').trim();
+  if (ghRepo) {
+    try {
+      const ghRes = await fetch(`https://api.github.com/repos/${ghRepo}/releases/latest`, {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          'User-Agent': 'EasyDel-AppRelease',
+        },
+        signal: AbortSignal.timeout(4000),
+        next: { revalidate: 300 },
+      });
+      if (ghRes.ok) {
+        const rel = (await ghRes.json()) as {
+          tag_name?: string;
+          published_at?: string;
+          assets?: { name?: string; size?: number; browser_download_url?: string }[];
+        };
+        const apkAsset = rel.assets?.find((a) => a.name?.toLowerCase().endsWith('.apk'));
+        if (apkAsset?.browser_download_url) {
+          return {
+            available: true,
+            version: rel.tag_name?.replace(/^v/i, '') || version,
+            fileName: apkAsset.name || fileName,
+            sizeBytes: apkAsset.size ?? null,
+            downloadUrl: apkAsset.browser_download_url,
+            source: 'github-release',
+            updatedAt: rel.published_at ?? null,
+          };
+        }
+      }
+    } catch {
+      // GitHub API unreachable or no release yet; fall through cleanly.
+    }
   }
 
   return {

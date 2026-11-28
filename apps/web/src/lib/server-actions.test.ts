@@ -47,16 +47,21 @@ vi.mock('next/headers', () => ({
 
 import { createHmac } from 'node:crypto';
 import {
+  changePasswordAction,
   createLocationAction,
   createRouteAction,
   moveLocationAction,
+  saveSettingsAction,
   setLocationStatusAction,
   setIssueStatusAction,
   updateLocationAction,
+  updateProfileAction,
 } from './actions';
+import { submitContactAction } from './support-actions';
 import {
   joinRouteByCodeAction,
   saveRouteAction,
+  saveSharedLocationAction,
   unsaveRouteAction,
   regenerateShareCodeAction,
   duplicateRouteAction,
@@ -70,6 +75,7 @@ import {
   generateRouteFromSessionAction,
 } from './recording-actions';
 import {
+  addStopByCodeAction,
   addStopFromLocationAction,
   renameRouteAction,
   deleteRouteAction,
@@ -176,6 +182,23 @@ async function cleanup() {
   await db.deliveryLocation.deleteMany({ where: { id: { in: locIds } } });
 
   await db.auditLog.deleteMany({ where: { userId: { in: userIds } } });
+  for (const id of userIds) {
+    await db.setting.deleteMany({
+      where: {
+        key: {
+          in: [
+            `checkpoint_type_options:${id}`,
+            `delivery_geofence_metres:${id}`,
+            `default_start:${id}`,
+            `distance_unit:${id}`,
+            `memorize_quiz_default:${id}`,
+            `memorize_auto_advance:${id}`,
+            `show_bag_reminder:${id}`,
+          ],
+        },
+      },
+    });
+  }
   await db.user.deleteMany({ where: { id: { in: userIds } } });
 }
 
@@ -582,4 +605,214 @@ describe('newspaper recording -> route generation -> sharing -> memorize/run wor
       expect(permBlocked?.error).toContain('history');
     },
   );
+});
+
+describe('expanded settings, profile/password, and contact form actions', () => {
+  it('persists expanded per-user settings, updates profile/password, and handles contact support submissions', async () => {
+    const user = await seedUser(EMAIL_A, 'Pat');
+    state.userId = user.id;
+
+    // 1. Settings save & validation
+    const badGeo = await saveSettingsAction(
+      null,
+      fd({ delivery_geofence_metres: '99999' }),
+    );
+    expect(badGeo?.error).toContain('10 and 5000');
+
+    const badStart = await saveSettingsAction(
+      null,
+      fd({
+        delivery_geofence_metres: '200',
+        default_start_latitude: '999',
+        default_start_longitude: '79.4',
+      }),
+    );
+    expect(badStart?.error).toContain('Default start coordinates');
+
+    const saved = await saveSettingsAction(
+      null,
+      fd({
+        delivery_geofence_metres: '225',
+        checkpoint_type_options: 'Morning Daily\nMilk',
+        default_start_name: 'Main Newsstand',
+        default_start_latitude: '13.61',
+        default_start_longitude: '79.41',
+        distance_unit: 'imperial',
+        memorize_quiz_default: 'on',
+      }),
+    );
+    expect(saved?.success).toBe('Preferences saved.');
+
+    const rows = await db.setting.findMany({
+      where: { key: { endsWith: `:${user.id}` } },
+    });
+    const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+    expect(map[`delivery_geofence_metres:${user.id}`]).toBe('225');
+    expect(map[`distance_unit:${user.id}`]).toBe('imperial');
+    expect(map[`memorize_quiz_default:${user.id}`]).toBe('true');
+    expect(map[`memorize_auto_advance:${user.id}`]).toBe('false');
+    expect(map[`show_bag_reminder:${user.id}`]).toBe('false');
+    expect(JSON.parse(map[`default_start:${user.id}`])).toEqual({
+      name: 'Main Newsstand',
+      lat: 13.61,
+      lng: 79.41,
+    });
+
+    // 2. Profile & Password update
+    const profRes = await updateProfileAction(
+      null,
+      fd({ firstName: 'Patricia', lastName: 'Carrier' }),
+    );
+    expect(profRes?.success).toBe('Profile updated.');
+    const updatedUser = await db.user.findUnique({ where: { id: user.id } });
+    expect(updatedUser?.firstName).toBe('Patricia');
+
+    const pwRes = await changePasswordAction(
+      null,
+      fd({ newPassword: 'StrongPassword99!', confirmPassword: 'StrongPassword99!' }),
+    );
+    expect(pwRes?.success).toContain('Password set');
+
+    // Wrong current password should now be refused
+    const wrongPw = await changePasswordAction(
+      null,
+      fd({
+        currentPassword: 'WrongPassword!',
+        newPassword: 'AnotherStrongPassword1!',
+        confirmPassword: 'AnotherStrongPassword1!',
+      }),
+    );
+    expect(wrongPw?.error).toContain('incorrect');
+
+    // 3. Contact support submission (dev/no-SMTP fallback succeeds and audits)
+    const badContact = await submitContactAction(
+      null,
+      fd({ name: 'P', email: 'not-email', subject: 'Hi', message: 'short' }),
+    );
+    expect(badContact?.error).toBeTruthy();
+
+    const contactOk = await submitContactAction(
+      null,
+      fd({
+        name: 'Patricia Carrier',
+        email: EMAIL_A,
+        topic: 'Route sharing & codes',
+        subject: 'Question about morning beat',
+        message: 'Everything works great, testing support confirmation ticket.',
+      }),
+    );
+    expect(contactOk?.success).toMatch(/Reference ED-[A-Z0-9]+/);
+  });
+
+  it('shares individual locations by code, clones privately on save, and adds stops by code', async () => {
+    const alice = await seedUser(EMAIL_A, 'Alice');
+    const bob = await seedUser(EMAIL_B, 'Bob');
+
+    // Alice creates a location — it automatically gets a unique 8-character shareCode.
+    state.userId = alice.id;
+    const createRes = await catchRedirect(() =>
+      createLocationAction(
+        null,
+        fd({
+          name: `${TAG} Blue Villa`,
+          address: '44 Corner St',
+          latitude: '13.635',
+          longitude: '79.425',
+          entranceInstructions: 'Side gate near mailbox',
+          notes: 'Leave paper dry',
+        }),
+      ),
+    );
+    expect(createRes.redirectedTo).toBe('/locations');
+
+    const aliceLoc = await db.deliveryLocation.findFirst({
+      where: { createdById: alice.id, name: `${TAG} Blue Villa` },
+    });
+    expect(aliceLoc?.shareCode).toMatch(/^[A-Z0-9]{8}$/);
+
+    await db.subscription.create({
+      data: {
+        deliveryLocationId: aliceLoc!.id,
+        customerId: `${TAG} Blue Villa`,
+        productType: 'Morning Times',
+        quantity: 2,
+        frequency: 'DAILY',
+      },
+    });
+
+    // Bob enters Alice's location share code into the single join form -> redirects to /share/:code.
+    state.userId = bob.id;
+    const joinRes = await catchRedirect(() =>
+      joinRouteByCodeAction(null, fd({ code: aliceLoc!.shareCode! })),
+    );
+    expect(joinRes.redirectedTo).toBe(`/share/${aliceLoc!.shareCode}`);
+
+    // Bob saves the shared location into his own locations (gets a fresh shareCode & copied details).
+    const saveLocRes = await catchRedirect(() =>
+      saveSharedLocationAction(null, fd({ code: aliceLoc!.shareCode! })),
+    );
+    expect(saveLocRes.redirectedTo).toBe('/locations');
+
+    const bobLoc = await db.deliveryLocation.findFirst({
+      where: { createdById: bob.id, name: `${TAG} Blue Villa` },
+      include: { subscriptions: true },
+    });
+    expect(bobLoc).toBeTruthy();
+    expect(bobLoc?.id).not.toBe(aliceLoc!.id);
+    expect(bobLoc?.shareCode).toMatch(/^[A-Z0-9]{8}$/);
+    expect(bobLoc?.shareCode).not.toBe(aliceLoc!.shareCode);
+    expect(bobLoc?.entranceInstructions).toBe('Side gate near mailbox');
+    expect(bobLoc?.subscriptions[0]?.productType).toBe('Morning Times');
+    expect(bobLoc?.subscriptions[0]?.quantity).toBe(2);
+
+    // Alice also has a second location, and Bob adds it directly to Bob's own route by code.
+    state.userId = alice.id;
+    await catchRedirect(() =>
+      createLocationAction(
+        null,
+        fd({
+          name: `${TAG} Red Cottage`,
+          address: '88 Market Ln',
+          latitude: '13.645',
+          longitude: '79.435',
+        }),
+      ),
+    );
+    const aliceSecond = await db.deliveryLocation.findFirst({
+      where: { createdById: alice.id, name: `${TAG} Red Cottage` },
+    });
+    expect(aliceSecond?.shareCode).toMatch(/^[A-Z0-9]{8}$/);
+
+    state.userId = bob.id;
+    await catchRedirect(() =>
+      createRouteAction(
+        null,
+        fd({
+          name: `${TAG} Bob Morning`,
+          startLatitude: '13.628',
+          startLongitude: '79.419',
+          endSameAsStart: 'on',
+          locationIds: [bobLoc!.id],
+        }),
+      ),
+    );
+    const bobRoute = await db.route.findFirst({
+      where: { createdById: bob.id, name: `${TAG} Bob Morning` },
+      include: { versions: { orderBy: { versionNumber: 'desc' }, take: 1, include: { stops: true } } },
+    });
+    expect(bobRoute?.versions[0]?.stops).toHaveLength(1);
+
+    const addStopRes = await addStopByCodeAction(
+      null,
+      fd({ routeId: bobRoute!.id, code: aliceSecond!.shareCode! }),
+    );
+    expect(addStopRes?.success).toContain('Red Cottage');
+
+    const updatedBobRoute = await db.route.findUnique({
+      where: { id: bobRoute!.id },
+      include: { versions: { orderBy: { versionNumber: 'desc' }, take: 1, include: { stops: true } } },
+    });
+    expect(updatedBobRoute?.versions[0]?.versionNumber).toBe(2);
+    expect(updatedBobRoute?.versions[0]?.stops).toHaveLength(2);
+  });
 });

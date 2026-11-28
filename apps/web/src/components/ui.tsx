@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { CSSProperties, ReactNode } from 'react';
 
 /*
@@ -23,11 +24,16 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <header className="flex flex-wrap items-end justify-between gap-4 border-b border-line pb-5">
+    <header className="relative flex flex-wrap items-end justify-between gap-4 border-b border-line pb-5">
       <div className="min-w-0">
-        {eyebrow && <p className="eyebrow mb-2 text-accent">{eyebrow}</p>}
-        <h1 className="text-xl font-semibold text-ink sm:text-2xl">{title}</h1>
-        {subtitle && <p className="mt-1.5 max-w-2xl text-sm text-ink-dim">{subtitle}</p>}
+        {eyebrow && (
+          <p className="eyebrow mb-2 inline-flex items-center gap-2 text-accent">
+            <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-accent" />
+            {eyebrow}
+          </p>
+        )}
+        <h1 className="text-xl font-semibold tracking-tight text-ink sm:text-2xl">{title}</h1>
+        {subtitle && <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-ink-dim">{subtitle}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </header>
@@ -49,10 +55,10 @@ export function Card({
 }) {
   return (
     <section
-      className={`rounded-xl border border-line bg-panel shadow-[0_1px_0_0_rgba(255,255,255,0.03)_inset,0_8px_24px_-12px_rgba(0,0,0,0.6)] ${className}`}
+      className={`overflow-hidden rounded-xl border border-line bg-panel/95 shadow-[0_1px_0_0_rgba(255,255,255,0.04)_inset,0_12px_32px_-16px_rgba(0,0,0,0.75)] backdrop-blur-sm transition-colors ${className}`}
     >
       {(title || description || aside) && (
-        <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-5 py-4">
+        <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line bg-panel-2/40 px-5 py-4">
           <div className="min-w-0">
             {title && <h2 className="text-sm font-semibold tracking-tight text-ink">{title}</h2>}
             {description && <p className="mt-1 text-sm text-ink-dim">{description}</p>}
@@ -80,21 +86,23 @@ export function StatCard({
   hint,
   tone = 'neutral',
   live = false,
+  href,
 }: {
   label: string;
   value: number | string;
   hint?: string;
   tone?: keyof typeof TONE_TEXT;
   live?: boolean;
+  href?: string;
 }) {
-  return (
-    <div className="group relative overflow-hidden rounded-xl border border-line bg-panel p-4 transition-colors hover:border-line-bright">
+  const inner = (
+    <div className="group relative h-full overflow-hidden rounded-xl border border-line bg-panel/95 p-4 shadow-[0_1px_0_0_rgba(255,255,255,0.03)_inset] transition-all hover:border-line-bright hover:bg-panel-2/80">
       {/* Top hairline picks up the tone colour — a quiet way to code the tile. */}
       <span
         aria-hidden
         className={`absolute inset-x-0 top-0 h-px ${
           tone === 'neutral' ? 'bg-line-bright' : 'bg-current'
-        } ${TONE_TEXT[tone]} opacity-70`}
+        } ${TONE_TEXT[tone]} opacity-80`}
       />
       <div className="flex items-center gap-1.5">
         <p className="eyebrow text-ink-faint">{label}</p>
@@ -109,6 +117,15 @@ export function StatCard({
       {hint && <p className="mt-1 text-xs text-ink-dim">{hint}</p>}
     </div>
   );
+
+  if (href) {
+    return (
+      <Link href={href} className="block h-full rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+        {inner}
+      </Link>
+    );
+  }
+  return inner;
 }
 
 /*

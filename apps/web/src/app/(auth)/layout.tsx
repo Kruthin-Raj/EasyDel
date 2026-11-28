@@ -53,9 +53,17 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           </dl>
         </div>
 
-        <p className="relative text-xs text-ink-faint">
-          Handles customer addresses and delivery history. Treat access accordingly.
-        </p>
+        <div className="relative flex flex-wrap items-center justify-between gap-4 text-xs text-ink-faint">
+          <span>Route creation, sharing &amp; memorization platform.</span>
+          <div className="flex items-center gap-4">
+            <Link href="/about" className="text-ink-dim transition-colors hover:text-accent">
+              About
+            </Link>
+            <Link href="/contact" className="text-ink-dim transition-colors hover:text-accent">
+              Contact us
+            </Link>
+          </div>
+        </div>
       </aside>
 
       <main className="flex items-center justify-center px-5 py-12 sm:px-10">
@@ -66,6 +74,14 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             <span className="eyebrow text-accent">route manager</span>
           </Link>
           {children}
+          <div className="mt-8 flex items-center justify-center gap-5 border-t border-line/70 pt-5 text-xs text-ink-dim lg:hidden">
+            <Link href="/about" className="hover:text-accent">
+              About
+            </Link>
+            <Link href="/contact" className="hover:text-accent">
+              Contact us
+            </Link>
+          </div>
         </div>
       </main>
     </div>

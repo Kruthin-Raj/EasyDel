@@ -17,12 +17,14 @@ export default function ShareRouteCard({
   shareCode,
   isOwner,
   compact = false,
+  kind = 'route',
 }: {
   routeId: string;
   routeName: string;
   shareCode: string;
   isOwner: boolean;
   compact?: boolean;
+  kind?: 'route' | 'location';
 }) {
   const path = formatSharePath(shareCode);
   const origin = useSyncExternalStore(
@@ -53,7 +55,7 @@ export default function ShareRouteCard({
     try {
       await navigator.share({
         title: routeName,
-        text: `Save and memorize "${routeName}" on EasyDel (Code: ${shareCode})`,
+        text: `Save "${routeName}" on EasyDel (Code: ${shareCode})`,
         url: fullUrl,
       });
     } catch {
@@ -70,7 +72,7 @@ export default function ShareRouteCard({
         <button
           type="button"
           onClick={() => copy('code', shareCode)}
-          title="Copy route code"
+          title={kind === 'location' ? 'Copy location code' : 'Copy route code'}
           className="inline-flex items-center gap-1 rounded-md bg-surface-2 px-2 py-1 text-xs text-ink-dim ring-1 ring-inset ring-line-bright transition-colors hover:bg-panel-2 hover:text-ink"
         >
           {copied === 'code' ? <Check className="h-3 w-3 text-ok" /> : <Copy className="h-3 w-3" />}
@@ -94,17 +96,18 @@ export default function ShareRouteCard({
       <header className="border-b border-line px-5 py-4">
         <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
           <Share2 className="h-4 w-4 text-accent" aria-hidden />
-          Share this route
+          {kind === 'location' ? 'Share this location' : 'Share this route'}
         </h2>
         <p className="mt-1 text-xs text-ink-dim">
-          Anyone with this code or link can save this route to their list, memorize the stops, and
-          deliver based on it.
+          {kind === 'location'
+            ? 'Anyone with this code or link can copy this stop, its photo, and its drop notes into their own list.'
+            : 'Anyone with this code or link can save this route to their list, memorize the stops, and deliver based on it.'}
         </p>
       </header>
 
       <div className="space-y-4 p-5">
         <div>
-          <p className="eyebrow text-ink-faint">Route code</p>
+          <p className="eyebrow text-ink-faint">{kind === 'location' ? 'Location code' : 'Route code'}</p>
           <div className="mt-1.5 flex items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2.5 ring-1 ring-inset ring-line-bright">
             <code className="numeric select-all text-lg font-semibold tracking-wider text-accent">
               {shareCode}
@@ -155,7 +158,7 @@ export default function ShareRouteCard({
             </button>
           )}
 
-          {isOwner && (
+          {isOwner && kind === 'route' && (
             <form action={regenerateShareCodeAction}>
               <input type="hidden" name="routeId" value={routeId} />
               <button

@@ -2,12 +2,18 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { allowedNavHrefs, ALL_NAV_HREFS } from './nav';
 import { buildSessionCookie, safeNextPath, SELF_SIGNUP_ROLE, type SessionUser } from './auth';
 import {
+  bagReminderKey,
   can,
   checkpointTypesKey,
   DEFAULT_CHECKPOINT_TYPES,
+  defaultStartKey,
+  distanceUnitKey,
   geofenceKey,
+  memorizeAutoAdvanceKey,
+  memorizeQuizKey,
   parseCheckpointTypes,
   parseGeofenceMetres,
+  parseUserPreferences,
 } from './permissions';
 import {
   deliveryWhere,
@@ -40,7 +46,7 @@ describe('navigation destinations', () => {
     expect(hrefs).not.toContain('/mentors');
   });
 
-  it('includes every route-recording, sharing, location, and delivery workflow link', () => {
+  it('includes every route-recording, sharing, location, delivery, and support link', () => {
     expect(ALL_NAV_HREFS).toEqual([
       '/',
       '/routes',
@@ -53,6 +59,8 @@ describe('navigation destinations', () => {
       '/delivery-history',
       '/reports',
       '/settings',
+      '/about',
+      '/contact',
     ]);
   });
 });
@@ -119,6 +127,43 @@ describe('equal capabilities & per-user preferences', () => {
     expect(parseGeofenceMetres({ [geofenceKey(uid)]: '9999', delivery_geofence_metres: 'bad' }, uid)).toBe(150);
     expect(parseGeofenceMetres({ delivery_geofence_metres: '10' }, uid)).toBe(10);
     expect(parseGeofenceMetres({ delivery_geofence_metres: '5000' }, uid)).toBe(5000);
+  });
+
+  it('parses full per-user route, memorize, and delivery preferences with safe fallbacks', () => {
+    const uid = 'u-99';
+    const prefs = parseUserPreferences(
+      {
+        [defaultStartKey(uid)]: JSON.stringify({ name: 'North Gate', lat: 13.55, lng: 79.55 }),
+        [memorizeQuizKey(uid)]: 'true',
+        [memorizeAutoAdvanceKey(uid)]: 'false',
+        [bagReminderKey(uid)]: 'false',
+        [distanceUnitKey(uid)]: 'imperial',
+        [geofenceKey(uid)]: '250',
+      },
+      uid,
+    );
+
+    expect(prefs.defaultStartName).toBe('North Gate');
+    expect(prefs.defaultStartLat).toBe(13.55);
+    expect(prefs.defaultStartLng).toBe(79.55);
+    expect(prefs.memorizeQuizDefault).toBe(true);
+    expect(prefs.memorizeAutoAdvance).toBe(false);
+    expect(prefs.showBagReminder).toBe(false);
+    expect(prefs.distanceUnit).toBe('imperial');
+    expect(prefs.geofenceMetres).toBe(250);
+
+    // Invalid coordinates or malformed JSON fall back safely to Depot defaults.
+    const fallback = parseUserPreferences(
+      {
+        [defaultStartKey(uid)]: '{bad json',
+      },
+      uid,
+    );
+    expect(fallback.defaultStartName).toBe('Depot');
+    expect(fallback.memorizeQuizDefault).toBe(false);
+    expect(fallback.memorizeAutoAdvance).toBe(true);
+    expect(fallback.showBagReminder).toBe(true);
+    expect(fallback.distanceUnit).toBe('metric');
   });
 });
 

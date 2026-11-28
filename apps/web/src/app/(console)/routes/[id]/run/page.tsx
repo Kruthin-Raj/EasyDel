@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
-import { loadSettings, parseGeofenceMetres } from '@/lib/permissions';
+import { loadSettings, parseUserPreferences } from '@/lib/permissions';
 import { canAccessRoute } from '@/lib/route-sharing';
 import Forbidden from '@/components/Forbidden';
 import { signedPhotoUrl } from '@/lib/storage';
@@ -62,7 +62,8 @@ export default async function RunPage({
   const version = route.versions[0];
 
   const settings = await loadSettings();
-  const geofence = parseGeofenceMetres(settings, user.id);
+  const prefs = parseUserPreferences(settings, user.id);
+  const geofence = prefs.geofenceMetres;
 
   // The run in progress for this driver on this version, if any.
   const activeRun = version
@@ -309,6 +310,7 @@ export default async function RunPage({
             stops={stops}
             reordered={Boolean(runOrder)}
             routeGeometry={plannedGeometry}
+            showBagReminder={prefs.showBagReminder}
           />
         </div>
       ) : (

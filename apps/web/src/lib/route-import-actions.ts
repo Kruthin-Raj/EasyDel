@@ -132,6 +132,7 @@ export async function createRouteFromLinksAction(
       continue;
     }
 
+    const shareCode = await allocateUniqueShareCode();
     const created = await db.deliveryLocation.create({
       data: {
         name: row.name,
@@ -141,6 +142,7 @@ export async function createRouteFromLinksAction(
         address: `${row.lat.toFixed(5)}, ${row.lng.toFixed(5)}`,
         latitude: row.lat,
         longitude: row.lng,
+        shareCode,
         createdById: user.id,
       },
     });
@@ -327,6 +329,7 @@ export async function addLinksToRouteAction(
       continue;
     }
 
+    const shareCode = await allocateUniqueShareCode();
     const created = await db.deliveryLocation.create({
       data: {
         name: row.name,
@@ -334,6 +337,7 @@ export async function addLinksToRouteAction(
         address: `${row.lat.toFixed(5)}, ${row.lng.toFixed(5)}`,
         latitude: row.lat,
         longitude: row.lng,
+        shareCode,
         createdById: user.id,
       },
     });

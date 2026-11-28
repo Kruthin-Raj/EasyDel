@@ -74,6 +74,103 @@ export function geofenceKey(userId: string) {
   return `delivery_geofence_metres:${userId}`;
 }
 
+export function defaultStartKey(userId: string) {
+  return `default_start:${userId}`;
+}
+
+export function memorizeQuizKey(userId: string) {
+  return `memorize_quiz_default:${userId}`;
+}
+
+export function memorizeAutoAdvanceKey(userId: string) {
+  return `memorize_auto_advance:${userId}`;
+}
+
+export function bagReminderKey(userId: string) {
+  return `show_bag_reminder:${userId}`;
+}
+
+export function distanceUnitKey(userId: string) {
+  return `distance_unit:${userId}`;
+}
+
+export type UserPreferences = {
+  geofenceMetres: number;
+  checkpointTypes: string[];
+  defaultStartName: string;
+  defaultStartLat: number;
+  defaultStartLng: number;
+  memorizeQuizDefault: boolean;
+  memorizeAutoAdvance: boolean;
+  showBagReminder: boolean;
+  distanceUnit: 'metric' | 'imperial';
+};
+
+/** Parses all per-user preferences with safe defaults. */
+export function parseUserPreferences(
+  settings: Record<string, string>,
+  userId?: string,
+): UserPreferences {
+  const geofenceMetres = parseGeofenceMetres(settings, userId);
+  const checkpointTypes = parseCheckpointTypes(settings, userId);
+
+  let defaultStartName = 'Depot';
+  let defaultStartLat = 13.6288;
+  let defaultStartLng = 79.4192;
+
+  if (userId && settings[defaultStartKey(userId)]) {
+    try {
+      const parsed = JSON.parse(settings[defaultStartKey(userId)]) as {
+        name?: unknown;
+        lat?: unknown;
+        lng?: unknown;
+      };
+      if (typeof parsed.name === 'string' && parsed.name.trim()) {
+        defaultStartName = parsed.name.trim().slice(0, 80);
+      }
+      if (
+        typeof parsed.lat === 'number' &&
+        typeof parsed.lng === 'number' &&
+        Number.isFinite(parsed.lat) &&
+        Number.isFinite(parsed.lng) &&
+        parsed.lat >= -90 &&
+        parsed.lat <= 90 &&
+        parsed.lng >= -180 &&
+        parsed.lng <= 180
+      ) {
+        defaultStartLat = parsed.lat;
+        defaultStartLng = parsed.lng;
+      }
+    } catch {
+      // Ignore malformed JSON and keep safe defaults.
+    }
+  }
+
+  const memorizeQuizDefault = userId
+    ? settings[memorizeQuizKey(userId)] === 'true'
+    : false;
+  const memorizeAutoAdvance = userId
+    ? settings[memorizeAutoAdvanceKey(userId)] !== 'false'
+    : true;
+  const showBagReminder = userId
+    ? settings[bagReminderKey(userId)] !== 'false'
+    : true;
+  const distanceUnit =
+    userId && settings[distanceUnitKey(userId)] === 'imperial' ? 'imperial' : 'metric';
+
+  return {
+    geofenceMetres,
+    checkpointTypes,
+    defaultStartName,
+    defaultStartLat,
+    defaultStartLng,
+    memorizeQuizDefault,
+    memorizeAutoAdvance,
+    showBagReminder,
+    distanceUnit,
+  };
+}
+
 /**
  * The package-type options to offer this user.
  *

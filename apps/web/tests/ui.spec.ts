@@ -236,6 +236,11 @@ test.describe('dashboard pages render real data', () => {
       const response = await page.goto(removed);
       expect(response?.status(), `${removed} should be removed`).toBe(404);
     }
+
+    for (const publicPage of ['/about', '/contact']) {
+      const response = await page.goto(publicPage);
+      expect(response?.status(), `${publicPage} should load`).toBe(200);
+    }
   });
 });
 

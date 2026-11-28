@@ -18,7 +18,11 @@ const PUBLIC_PATHS = [
   '/verify',
   '/forgot-password',
   '/reset-password',
+  '/about',
+  '/contact',
   '/api/auth',
+  '/api/mobile',
+  '/api/app-release',
 ];
 
 function isPublic(pathname: string) {

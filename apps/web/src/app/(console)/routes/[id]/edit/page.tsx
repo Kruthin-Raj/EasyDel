@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { locationWhere } from '@/lib/scope';
 import {
+  addStopByCodeAction,
   addStopByLinkAction,
   addStopFromLocationAction,
   removeStopAction,
@@ -148,6 +149,7 @@ export default async function EditRoutePage({ params }: { params: Promise<{ id: 
         }))}
         availableLocations={available}
         addByLinkAction={addStopByLinkAction}
+        addByCodeAction={addStopByCodeAction}
         addFromLocationAction={addStopFromLocationAction}
         removeStopAction={removeStopAction}
         reoptimiseAction={reoptimiseAction}

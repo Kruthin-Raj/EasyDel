@@ -2,7 +2,7 @@
 
 import { useState, useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { Link2, MapPin, Trash2, Loader2, Shuffle, TriangleAlert } from 'lucide-react';
+import { Link2, MapPin, Trash2, Loader2, Shuffle, TriangleAlert, KeyRound } from 'lucide-react';
 
 type State = { error?: string; success?: string; info?: string } | null;
 
@@ -82,6 +82,7 @@ export default function RouteEditor({
   stops,
   availableLocations,
   addByLinkAction,
+  addByCodeAction,
   addFromLocationAction,
   removeStopAction,
   reoptimiseAction,
@@ -97,6 +98,7 @@ export default function RouteEditor({
   stops: EditorStop[];
   availableLocations: { id: string; name: string; address: string }[];
   addByLinkAction: (prev: State, formData: FormData) => Promise<State>;
+  addByCodeAction: (prev: State, formData: FormData) => Promise<State>;
   addFromLocationAction: (prev: State, formData: FormData) => Promise<State>;
   removeStopAction: (formData: FormData) => Promise<void>;
   reoptimiseAction: (formData: FormData) => Promise<void>;
@@ -107,8 +109,9 @@ export default function RouteEditor({
   runCount: number;
   isArchived: boolean;
 }) {
-  const [tab, setTab] = useState<'link' | 'checkpoint'>('link');
+  const [tab, setTab] = useState<'link' | 'code' | 'checkpoint'>('link');
   const [linkState, runLink] = useActionState(addByLinkAction, null);
+  const [codeState, runCode] = useActionState(addByCodeAction, null);
   const [pickState, runPick] = useActionState(addFromLocationAction, null);
   const [deleteState, runDelete] = useActionState(deleteRouteAction, null);
   const [renameState, runRename] = useActionState(renameRouteAction, null);
@@ -218,12 +221,13 @@ export default function RouteEditor({
             <h2 className="text-sm font-semibold text-ink">Add a stop</h2>
           </header>
 
-          {/* Two ways in: a fresh location (by link/coords), or a checkpoint already saved. */}
-          <div className="flex gap-1 border-b border-line px-3 pt-3">
+          {/* Three ways in: a fresh location (by link/coords), a shared location code, or a checkpoint already saved. */}
+          <div className="flex flex-wrap gap-1 border-b border-line px-3 pt-3">
             {(
               [
-                ['link', 'Create checkpoint', MapPin],
-                ['checkpoint', 'Saved checkpoint', Link2],
+                ['link', 'Map link', MapPin],
+                ['code', 'By code', KeyRound],
+                ['checkpoint', 'Saved', Link2],
               ] as const
             ).map(([key, label, Icon]) => (
               <button
@@ -277,6 +281,28 @@ export default function RouteEditor({
               </div>
 
               <Submit label="Add stop" pendingLabel="Adding…" />
+            </form>
+          ) : tab === 'code' ? (
+            <form action={runCode} className="space-y-3 p-5">
+              <Banner state={codeState} />
+              <input type="hidden" name="routeId" value={routeId} />
+
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-medium text-ink">
+                  Location code or link <span className="text-accent">*</span>
+                </span>
+                <input
+                  name="code"
+                  required
+                  placeholder="e.g. K7M9P2X4"
+                  className="field font-mono text-sm"
+                />
+                <span className="mt-1.5 block text-xs text-ink-dim">
+                  Copies the shared house pin, photo, and instructions into your route.
+                </span>
+              </label>
+
+              <Submit label="Add by code" pendingLabel="Adding…" />
             </form>
           ) : (
             <form action={runPick} className="space-y-3 p-5">

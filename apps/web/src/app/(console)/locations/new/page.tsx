@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { requireUser } from '@/lib/auth';
 import { createLocationAction, createLocationFromLinkAction } from '@/lib/actions';
 import ActionForm from '@/components/ActionForm';
+import JoinRouteForm from '@/components/JoinRouteForm';
 import { PageHeader, Card, Field, TextArea, Notice } from '@/components/ui';
 
 export default async function NewLocationPage() {
@@ -23,6 +24,12 @@ export default async function NewLocationPage() {
       />
 
       <div className="max-w-2xl space-y-4">
+        <JoinRouteForm
+          title="Add by location code"
+          description="Got a teammate's location code? Paste it to save their pin, photo, and delivery notes."
+          submitLabel="Open code"
+        />
+
         {/* ---- Quick add from link ---- */}
         <Card title="Quick add from map link">
           <div className="p-5">

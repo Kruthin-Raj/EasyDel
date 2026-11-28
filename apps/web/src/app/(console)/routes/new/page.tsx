@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
+import { loadSettings, parseUserPreferences } from '@/lib/permissions';
 import { locationWhere, ownedRouteWhere } from '@/lib/scope';
 import { createRouteAction } from '@/lib/actions';
 import ActionForm from '@/components/ActionForm';
@@ -19,7 +20,7 @@ export default async function NewRoutePage({
 
   // Only deliverable locations created by this user are offered: ACTIVE, and
   // with at least one ACTIVE subscription.
-  const [deliverable, existingRoutes] = await Promise.all([
+  const [deliverable, existingRoutes, settings] = await Promise.all([
     db.deliveryLocation.findMany({
       where: { ...locationWhere(user), status: 'ACTIVE', subscriptions: { some: { status: 'ACTIVE' } } },
       include: { subscriptions: { where: { status: 'ACTIVE' } } },
@@ -36,7 +37,10 @@ export default async function NewRoutePage({
         },
       },
     }),
+    loadSettings(),
   ]);
+
+  const prefs = parseUserPreferences(settings, user.id);
 
   const baseRoute = baseRouteId ? existingRoutes.find((r) => r.id === baseRouteId) : null;
   const baseRouteLocationIds = new Set(
@@ -47,7 +51,7 @@ export default async function NewRoutePage({
     <>
       <PageHeader
         title="New delivery route"
-        subtitle="Stops are ordered by the optimiser (nearest-neighbour + 2-opt), not by name."
+        subtitle="Stops are automatically arranged into the shortest path around your area."
         actions={
           <Link
             href="/routes"
@@ -68,9 +72,8 @@ export default async function NewRoutePage({
       ) : (
         <div className="max-w-3xl space-y-4">
           <Notice>
-            Road distances come from OSRM when <code className="font-mono">OSRM_URL</code> is
-            reachable. If it is not, the route still optimises using straight-line distance and is
-            labelled as an estimate — the stop order never depends on the network.
+            Routes automatically follow real road distances when connected, and fall back to
+            straight-line estimates offline so you can always plan your beat.
           </Notice>
 
           <Card>
@@ -93,9 +96,9 @@ export default async function NewRoutePage({
                 <fieldset className="rounded-lg ring-1 ring-inset ring-line p-4">
                   <legend className="px-1 text-sm font-medium text-ink">Start point</legend>
                   <div className="grid gap-4 sm:grid-cols-3">
-                    <Field label="Name" name="startName" defaultValue="Depot" />
-                    <Field label="Latitude" name="startLatitude" type="number" step="any" required defaultValue="13.6288" />
-                    <Field label="Longitude" name="startLongitude" type="number" step="any" required defaultValue="79.4192" />
+                    <Field label="Name" name="startName" defaultValue={prefs.defaultStartName} />
+                    <Field label="Latitude" name="startLatitude" type="number" step="any" required defaultValue={prefs.defaultStartLat} />
+                    <Field label="Longitude" name="startLongitude" type="number" step="any" required defaultValue={prefs.defaultStartLng} />
                   </div>
                 </fieldset>
 
@@ -113,9 +116,9 @@ export default async function NewRoutePage({
                     </span>
                   </label>
                   <div className="grid gap-4 sm:grid-cols-3">
-                    <Field label="Name" name="endName" defaultValue="Depot" />
-                    <Field label="Latitude" name="endLatitude" type="number" step="any" defaultValue="13.6288" />
-                    <Field label="Longitude" name="endLongitude" type="number" step="any" defaultValue="79.4192" />
+                    <Field label="Name" name="endName" defaultValue={prefs.defaultStartName} />
+                    <Field label="Latitude" name="endLatitude" type="number" step="any" defaultValue={prefs.defaultStartLat} />
+                    <Field label="Longitude" name="endLongitude" type="number" step="any" defaultValue={prefs.defaultStartLng} />
                   </div>
                   <p className="mt-2 text-xs text-ink-dim">
                     Ignored while &ldquo;Return to start&rdquo; is ticked.

@@ -28,9 +28,9 @@ function SubmitButton({ label }: { label: string }) {
  * code or share link.
  */
 export default function JoinRouteForm({
-  title = 'Open a shared route by code or link',
-  description = 'Got a route code or link from someone? Paste it here to preview, save it to your routes, memorize the stops, and start delivering.',
-  submitLabel = 'Open route',
+  title = 'Open a shared route or location',
+  description = 'Paste an 8-letter code or share link to start or save.',
+  submitLabel = 'Open',
 }: {
   title?: string;
   description?: string;

@@ -4,7 +4,18 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { db } from './db';
 import { requireUser } from './auth';
-import { requireCapability, currentUserWith, checkpointTypesKey, geofenceKey } from './permissions';
+import {
+  requireCapability,
+  currentUserWith,
+  checkpointTypesKey,
+  geofenceKey,
+  defaultStartKey,
+  memorizeQuizKey,
+  memorizeAutoAdvanceKey,
+  bagReminderKey,
+  distanceUnitKey,
+} from './permissions';
+import { hashPassword, validatePasswordStrength, verifyPassword } from './password';
 import { allocateUniqueShareCode } from './route-sharing';
 import { optimizeRoute, refineWithOsrm, isValidCoord, haversine, type Point } from './optimize';
 import { parseMapLink, resolveShortLink } from './map-links';
@@ -75,6 +86,7 @@ export async function createLocationAction(
     };
   }
 
+  const shareCode = await allocateUniqueShareCode();
   const created = await db.deliveryLocation.create({
     data: {
       name,
@@ -87,6 +99,7 @@ export async function createLocationAction(
       notes: String(formData.get('notes') ?? '') || null,
       entranceInstructions: String(formData.get('entranceInstructions') ?? '') || null,
       securityInstructions: String(formData.get('securityInstructions') ?? '') || null,
+      shareCode,
       createdById: user.id,
     },
   });
@@ -133,6 +146,7 @@ export async function createLocationFromLinkAction(
     };
   }
 
+  const shareCode = await allocateUniqueShareCode();
   const created = await db.deliveryLocation.create({
     data: {
       name,
@@ -145,6 +159,7 @@ export async function createLocationFromLinkAction(
       notes: String(formData.get('notes') ?? '') || null,
       entranceInstructions: String(formData.get('entranceInstructions') ?? '') || null,
       securityInstructions: String(formData.get('securityInstructions') ?? '') || null,
+      shareCode,
       createdById: user.id,
     },
   });
@@ -475,6 +490,7 @@ export async function commitImportAction(
   let created = 0;
   for (const r of importable) {
     if (!isValidCoord(r.latitude, r.longitude)) continue;
+    const shareCode = await allocateUniqueShareCode();
     const loc = await db.deliveryLocation.create({
       data: {
         name: r.name,
@@ -483,6 +499,7 @@ export async function commitImportAction(
         latitude: r.latitude as number,
         longitude: r.longitude as number,
         notes: r.notes,
+        shareCode,
         createdById: user.id,
       },
     });
@@ -522,27 +539,120 @@ export async function saveSettingsAction(
     return { error: 'Delivery geofence must be between 10 and 5000 metres.' };
   }
 
+  const startName = String(formData.get('default_start_name') ?? 'Depot').trim().slice(0, 80) || 'Depot';
+  const startLatRaw = String(formData.get('default_start_latitude') ?? '').trim();
+  const startLngRaw = String(formData.get('default_start_longitude') ?? '').trim();
+  const hasStartCoords = startLatRaw !== '' || startLngRaw !== '';
+  const startLat = hasStartCoords ? Number(startLatRaw) : 13.6288;
+  const startLng = hasStartCoords ? Number(startLngRaw) : 79.4192;
+
+  if (!isValidCoord(startLat, startLng)) {
+    return { error: 'Default start coordinates must be valid (lat −90..90, lng −180..180).' };
+  }
+
   const packageTypes = String(formData.get('checkpoint_type_options') ?? '');
+  const distanceUnit =
+    String(formData.get('distance_unit') ?? 'metric') === 'imperial' ? 'imperial' : 'metric';
+  const memorizeQuizDefault = formData.get('memorize_quiz_default') === 'on' ? 'true' : 'false';
+  const memorizeAutoAdvance = formData.get('memorize_auto_advance') === 'on' ? 'true' : 'false';
+  const showBagReminder = formData.get('show_bag_reminder') === 'on' ? 'true' : 'false';
 
-  await db.setting.upsert({
-    where: { key: checkpointTypesKey(user.id) },
-    update: { value: packageTypes },
-    create: { key: checkpointTypesKey(user.id), value: packageTypes },
-  });
+  const entries: [string, string][] = [
+    [checkpointTypesKey(user.id), packageTypes],
+    [geofenceKey(user.id), String(geofence)],
+    [
+      defaultStartKey(user.id),
+      JSON.stringify({ name: startName, lat: startLat, lng: startLng }),
+    ],
+    [distanceUnitKey(user.id), distanceUnit],
+    [memorizeQuizKey(user.id), memorizeQuizDefault],
+    [memorizeAutoAdvanceKey(user.id), memorizeAutoAdvance],
+    [bagReminderKey(user.id), showBagReminder],
+  ];
 
-  await db.setting.upsert({
-    where: { key: geofenceKey(user.id) },
-    update: { value: String(geofence) },
-    create: { key: geofenceKey(user.id), value: String(geofence) },
-  });
+  await Promise.all(
+    entries.map(([key, value]) =>
+      db.setting.upsert({
+        where: { key },
+        update: { value },
+        create: { key, value },
+      }),
+    ),
+  );
 
   await audit(user.id, 'SETTINGS_UPDATED', 'Setting', user.id);
   revalidatePath('/settings');
   revalidatePath('/record');
   revalidatePath('/routes');
+  revalidatePath('/routes/new');
   return {
     success: 'Preferences saved.',
   };
+}
+
+export async function updateProfileAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const user = await requireUser();
+  const firstName = String(formData.get('firstName') ?? '').trim().slice(0, 60);
+  const lastName = String(formData.get('lastName') ?? '').trim().slice(0, 60);
+
+  if (!firstName) return { error: 'First name is required.' };
+
+  await db.user.update({
+    where: { id: user.id },
+    data: { firstName, lastName },
+  });
+
+  await audit(user.id, 'PROFILE_UPDATED', 'User', user.id, {
+    oldValue: `${user.firstName} ${user.lastName}`.trim(),
+    newValue: `${firstName} ${lastName}`.trim(),
+  });
+
+  revalidatePath('/settings');
+  revalidatePath('/');
+  revalidatePath('/routes');
+  return { success: 'Profile updated.' };
+}
+
+export async function changePasswordAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const user = await requireUser();
+  const currentPassword = String(formData.get('currentPassword') ?? '');
+  const newPassword = String(formData.get('newPassword') ?? '');
+  const confirmPassword = String(formData.get('confirmPassword') ?? '');
+
+  const row = await db.user.findUnique({
+    where: { id: user.id },
+    select: { passwordHash: true },
+  });
+  if (!row) return { error: 'Account could not be loaded.' };
+
+  if (row.passwordHash) {
+    if (!currentPassword) {
+      return { error: 'Enter your current password to confirm the change.' };
+    }
+    const ok = await verifyPassword(currentPassword, row.passwordHash);
+    if (!ok) {
+      return { error: 'Current password is incorrect.' };
+    }
+  }
+
+  const strengthError = validatePasswordStrength(newPassword, confirmPassword);
+  if (strengthError) return { error: strengthError };
+
+  const passwordHash = await hashPassword(newPassword);
+  await db.user.update({
+    where: { id: user.id },
+    data: { passwordHash },
+  });
+
+  await audit(user.id, 'PASSWORD_CHANGED', 'User', user.id);
+  revalidatePath('/settings');
+  return { success: row.passwordHash ? 'Password updated.' : 'Password set for your account.' };
 }
 
 // ----------------------------------------------------------- issues ---------

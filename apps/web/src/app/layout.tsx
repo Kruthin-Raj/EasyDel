@@ -25,8 +25,9 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'EasyDel — Route Manager',
-  description: 'Delivery agent route management, dispatch and live tracking.',
+  title: 'EasyDel — Route Manager & Memorize',
+  description:
+    'Record delivery rounds with photos and notes, share routes by code or link, memorize every stop, and deliver with confidence.',
 };
 
 /*

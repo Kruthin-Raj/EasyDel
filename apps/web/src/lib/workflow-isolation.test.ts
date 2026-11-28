@@ -12,7 +12,12 @@ import {
   runWhere,
   trainingWhere,
 } from './scope';
-import { allocateUniqueShareCode, canAccessRoute, ensureRouteShareCode } from './route-sharing';
+import {
+  allocateUniqueShareCode,
+  canAccessRoute,
+  ensureLocationShareCode,
+  ensureRouteShareCode,
+} from './route-sharing';
 import { SHARE_CODE_ALPHABET, SHARE_CODE_LENGTH } from './share-code';
 import type { SessionUser } from './auth';
 
@@ -251,5 +256,23 @@ describe('multi-user isolation and peer sharing persistence', () => {
     // Calling again returns the same code without overwriting it.
     expect(await ensureRouteShareCode(routeWithoutCode.id)).toBe(assigned);
     expect(await ensureRouteShareCode('00000000-0000-4000-8000-000000000000')).toBeNull();
+
+    // Location share codes allocate & idempotently backfill too.
+    const locWithoutCode = await db.deliveryLocation.create({
+      data: {
+        name: `${TAG} Legacy House`,
+        address: '99 Legacy Way',
+        latitude: 13.631,
+        longitude: 79.421,
+        shareCode: null,
+        createdById: userA.id,
+      },
+    });
+    const locAssigned = await ensureLocationShareCode(locWithoutCode.id);
+    expect(locAssigned).toBeTruthy();
+    expect(locAssigned).toHaveLength(SHARE_CODE_LENGTH);
+    expect(locAssigned).not.toBe(assigned);
+    expect(await ensureLocationShareCode(locWithoutCode.id)).toBe(locAssigned);
+    expect(await ensureLocationShareCode('00000000-0000-4000-8000-000000000000')).toBeNull();
   });
 });

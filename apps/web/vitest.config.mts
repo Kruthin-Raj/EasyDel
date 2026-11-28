@@ -23,6 +23,11 @@ function loadEnvLocal() {
 loadEnvLocal();
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@': resolve(here, 'src'),
+    },
+  },
   test: {
     environment: 'node',
     // Unit tests only. Playwright owns the browser-level tests under tests/.

@@ -105,3 +105,39 @@ export async function POST(request: Request) {
     },
   });
 }
+
+/** Updates the signed-in mobile user's password. */
+export async function PATCH(request: Request) {
+  const user = await getBearerUser(request);
+  if (!user) return NextResponse.json({ error: 'Sign in required.' }, { status: 401 });
+
+  let body: { currentPassword?: string; newPassword?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
+  }
+
+  const row = await db.user.findUnique({
+    where: { id: user.id },
+    select: { passwordHash: true },
+  });
+  if (!row) return NextResponse.json({ error: 'Account not found.' }, { status: 404 });
+
+  if (row.passwordHash) {
+    if (!body.currentPassword || !(await verifyPassword(body.currentPassword, row.passwordHash))) {
+      return NextResponse.json({ error: 'Current password is incorrect.' }, { status: 400 });
+    }
+  }
+
+  const newPw = String(body.newPassword ?? '');
+  const weak = validatePasswordStrength(newPw, newPw);
+  if (weak) return NextResponse.json({ error: weak }, { status: 400 });
+
+  await db.user.update({
+    where: { id: user.id },
+    data: { passwordHash: await hashPassword(newPw) },
+  });
+
+  return NextResponse.json({ ok: true });
+}

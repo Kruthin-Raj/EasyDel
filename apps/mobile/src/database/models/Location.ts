@@ -15,5 +15,5 @@ export default class Location extends Model {
   @text('entrance_instructions') entranceInstructions!: string | null;
   @text('photo_url') photoUrl!: string | null;
   @text('status') status!: string;
-  @text('sync_status') syncStatus!: string;
+  @text('local_sync_state') localSyncState!: string;
 }

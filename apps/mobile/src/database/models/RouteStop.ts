@@ -8,5 +8,6 @@ export default class RouteStop extends Model {
   @text('location_id') locationId!: string;
   @field('sequence') sequence!: number;
   @text('delivery_status') deliveryStatus!: string;
-  @text('sync_status') syncStatus!: string;
+  @text('items_summary') itemsSummary!: string | null;
+  @text('local_sync_state') localSyncState!: string;
 }

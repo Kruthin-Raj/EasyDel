@@ -1,0 +1,55 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: 'Live EasyDel backend URL (e.g. https://easydel.example.com)'
+        required: true
+        default: 'https://easydel.vercel.app'
+
+jobs:
+  android-apk:
+    name: Build Direct-Install Release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Java 17 (Android Gradle)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Write mobile env & generate Android native project
+        env:
+          EXPO_PUBLIC_API_URL: ${{ inputs.api_url }}
+        working-directory: apps/mobile
+        run: |
+          echo "EXPO_PUBLIC_API_URL=${EXPO_PUBLIC_API_URL}" > .env
+          npx expo prebuild --platform android --non-interactive
+
+      - name: Compile signed release APK
+        working-directory: apps/mobile/android
+        run: ./gradlew assembleRelease
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: easydel-android-apk
+          path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk

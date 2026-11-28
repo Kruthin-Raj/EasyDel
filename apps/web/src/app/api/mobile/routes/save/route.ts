@@ -76,3 +76,16 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ error: `No route or location found for code “${code}”.` }, { status: 404 });
 }
+
+/** Removes a saved shared route from the user's mobile list without touching the original. */
+export async function DELETE(request: Request) {
+  const user = await getBearerUser(request);
+  if (!user) return NextResponse.json({ error: 'Sign in required.' }, { status: 401 });
+
+  const url = new URL(request.url);
+  const routeId = url.searchParams.get('routeId')?.trim() ?? '';
+  if (!routeId) return NextResponse.json({ error: 'routeId required.' }, { status: 400 });
+
+  await db.savedRoute.deleteMany({ where: { userId: user.id, routeId } });
+  return NextResponse.json({ ok: true });
+}

@@ -20,6 +20,8 @@ const PUBLIC_PATHS = [
   '/reset-password',
   '/about',
   '/contact',
+  '/download-app',
+  '/manifest.webmanifest',
   '/api/auth',
   '/api/mobile',
   '/api/app-release',
@@ -34,8 +36,25 @@ function hasSession(request: NextRequest) {
   return request.cookies.has('easydel_session');
 }
 
+const MOBILE_API_CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  if (pathname.startsWith('/api/mobile') || pathname === '/api/app-release') {
+    if (request.method === 'OPTIONS') {
+      return new NextResponse(null, { status: 204, headers: MOBILE_API_CORS });
+    }
+    const res = NextResponse.next();
+    for (const [k, v] of Object.entries(MOBILE_API_CORS)) {
+      res.headers.set(k, v);
+    }
+    return res;
+  }
 
   if (isPublic(pathname)) return NextResponse.next();
 

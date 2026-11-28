@@ -14,7 +14,7 @@ export default async function PublicShell({
   activePath,
 }: {
   children: React.ReactNode;
-  activePath: '/about' | '/contact';
+  activePath: '/about' | '/contact' | '/download-app';
 }) {
   const user = await getSessionUser();
 
@@ -42,6 +42,16 @@ export default async function PublicShell({
           </Link>
 
           <nav aria-label="Public" className="flex items-center gap-2 sm:gap-3">
+            <Link
+              href="/download-app"
+              className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                activePath === '/download-app'
+                  ? 'bg-panel-2 text-ink ring-1 ring-inset ring-line-bright'
+                  : 'text-accent hover:text-accent-bright'
+              }`}
+            >
+              Get App
+            </Link>
             <Link
               href="/about"
               className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
@@ -86,6 +96,9 @@ export default async function PublicShell({
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-5 py-5 text-xs text-ink-dim sm:px-8">
           <p>EasyDel — Peer-to-peer route creation, sharing, and stop memorization.</p>
           <div className="flex items-center gap-4">
+            <Link href="/download-app" className="hover:text-accent">
+              Get Android App
+            </Link>
             <Link href="/about" className="hover:text-accent">
               About
             </Link>

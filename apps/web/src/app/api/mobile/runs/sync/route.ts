@@ -11,6 +11,7 @@ type SyncDeliveryInput = {
   status: 'DELIVERED' | 'FAILED' | 'SKIPPED';
   quantity?: number;
   notes?: string;
+  nextVisitNote?: string;
   reason?: string;
   recordedDistance?: number | null;
 };
@@ -101,6 +102,12 @@ export async function POST(request: Request) {
             reason: entry.reason || null,
             recordedDistance: entry.recordedDistance ?? null,
           },
+        });
+      }
+      if (entry.nextVisitNote?.trim()) {
+        await db.deliveryLocation.updateMany({
+          where: { id: entry.locationId, createdById: user.id },
+          data: { nextVisitNote: entry.nextVisitNote.trim() },
         });
       }
       synced++;
